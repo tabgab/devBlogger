@@ -261,28 +261,52 @@ class AIConfigurationPanel(ctk.CTkFrame):
         model_label = ctk.CTkLabel(content, text="Model:")
         model_label.grid(row=1, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
 
-        self.ollama_model = ctk.CTkOptionMenu(
-            content,
-            values=["llama2", "codellama", "mistral", "Loading..."],
-            width=200
+        # Model input frame for both dropdown and manual entry
+        model_frame = ctk.CTkFrame(content, fg_color="transparent")
+        model_frame.grid(row=1, column=1, padx=(0, 10), pady=(0, 5), sticky="ew")
+        model_frame.grid_columnconfigure(0, weight=1)
+
+        self.ollama_model = ctk.CTkEntry(
+            model_frame,
+            placeholder_text="Enter model name (e.g., llama3.1:latest)",
+            width=250
         )
-        self.ollama_model.grid(row=1, column=1, padx=(0, 10), pady=(0, 5), sticky="ew")
+        self.ollama_model.grid(row=0, column=0, sticky="ew")
+
+        # Refresh models button
+        refresh_models_button = ctk.CTkButton(
+            model_frame,
+            text="↻",
+            command=self._refresh_ollama_models,
+            width=30,
+            height=28
+        )
+        refresh_models_button.grid(row=0, column=1, padx=(5, 0))
+
+        # Available models display
+        self.ollama_models_label = ctk.CTkLabel(
+            content,
+            text="Available models: Loading...",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.ollama_models_label.grid(row=2, column=1, padx=(0, 10), pady=(2, 5), sticky="w")
 
         # Max tokens
         max_tokens_label = ctk.CTkLabel(content, text="Max Tokens:")
-        max_tokens_label.grid(row=2, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        max_tokens_label.grid(row=3, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
 
         self.ollama_max_tokens = ctk.CTkEntry(content, width=100)
         self.ollama_max_tokens.insert(0, "2000")
-        self.ollama_max_tokens.grid(row=2, column=1, padx=(0, 10), pady=(0, 5), sticky="w")
+        self.ollama_max_tokens.grid(row=3, column=1, padx=(0, 10), pady=(0, 5), sticky="w")
 
         # Temperature
         temp_label = ctk.CTkLabel(content, text="Temperature:")
-        temp_label.grid(row=3, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        temp_label.grid(row=4, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
 
         self.ollama_temperature = ctk.CTkEntry(content, width=100)
         self.ollama_temperature.insert(0, "0.7")
-        self.ollama_temperature.grid(row=3, column=1, padx=(0, 10), pady=(0, 5), sticky="w")
+        self.ollama_temperature.grid(row=4, column=1, padx=(0, 10), pady=(0, 5), sticky="w")
 
         # Test button
         test_button = ctk.CTkButton(
@@ -291,7 +315,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             command=self._test_ollama,
             width=120
         )
-        test_button.grid(row=4, column=0, padx=(0, 10), pady=(20, 0))
+        test_button.grid(row=5, column=0, padx=(0, 10), pady=(20, 0))
 
         # Save button
         save_button = ctk.CTkButton(
@@ -302,7 +326,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             hover_color="darkgreen",
             width=120
         )
-        save_button.grid(row=4, column=1, padx=(0, 10), pady=(20, 0))
+        save_button.grid(row=5, column=1, padx=(0, 10), pady=(20, 0))
 
         # Status label
         self.ollama_status = ctk.CTkLabel(
@@ -311,7 +335,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="red"
         )
-        self.ollama_status.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+        self.ollama_status.grid(row=6, column=0, columnspan=2, pady=(10, 0))
 
     def _create_common_controls(self, parent):
         """Create common controls for all providers."""
@@ -381,11 +405,15 @@ class AIConfigurationPanel(ctk.CTkFrame):
             if ollama_config.get("base_url"):
                 self.ollama_url.delete(0, "end")
                 self.ollama_url.insert(0, ollama_config["base_url"])
-                self.ollama_model.set(ollama_config.get("model", "llama2"))
+                self.ollama_model.delete(0, "end")
+                self.ollama_model.insert(0, ollama_config.get("model", "llama3.1:latest"))
                 self.ollama_max_tokens.delete(0, "end")
                 self.ollama_max_tokens.insert(0, str(ollama_config.get("max_tokens", 2000)))
                 self.ollama_temperature.delete(0, "end")
                 self.ollama_temperature.insert(0, str(ollama_config.get("temperature", 0.7)))
+
+            # Load available Ollama models
+            self._refresh_ollama_models()
 
             # Update status
             self._refresh_status()
@@ -587,3 +615,36 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         import threading
         threading.Thread(target=test_all_thread, daemon=True).start()
+
+    def _refresh_ollama_models(self):
+        """Refresh available Ollama models."""
+        def refresh_thread():
+            try:
+                # Get Ollama provider
+                ollama_provider = self.ai_manager.get_provider("ollama")
+                if ollama_provider:
+                    # Get available models
+                    models = ollama_provider.get_available_models()
+                    if models:
+                        models_text = ", ".join(models[:5])  # Show first 5 models
+                        if len(models) > 5:
+                            models_text += f" (+{len(models) - 5} more)"
+                        self.after(0, lambda: self.ollama_models_label.configure(
+                            text=f"Available models: {models_text}"
+                        ))
+                    else:
+                        self.after(0, lambda: self.ollama_models_label.configure(
+                            text="Available models: None found (run 'ollama pull <model>' to install)"
+                        ))
+                else:
+                    self.after(0, lambda: self.ollama_models_label.configure(
+                        text="Available models: Ollama not configured"
+                    ))
+            except Exception as e:
+                self.logger.error(f"Error refreshing Ollama models: {e}")
+                self.after(0, lambda: self.ollama_models_label.configure(
+                    text="Available models: Error loading (check Ollama connection)"
+                ))
+
+        import threading
+        threading.Thread(target=refresh_thread, daemon=True).start()

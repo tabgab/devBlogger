@@ -64,7 +64,7 @@ class Settings:
                     },
                     "ollama": {
                         "base_url": "http://localhost:11434",
-                        "model": "llama2",
+                        "model": "llama3.1:latest",
                         "max_tokens": 2000,
                         "temperature": 0.7,
                     },

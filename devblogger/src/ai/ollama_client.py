@@ -19,7 +19,7 @@ class OllamaProvider(AIProvider):
 
     def __init__(self, settings: Settings):
         """Initialize Ollama provider."""
-        super().__init__("ollama", "llama2")
+        super().__init__("ollama", "llama3.1:latest")
 
         self.settings = settings
         self.base_url = "http://localhost:11434"
@@ -33,7 +33,7 @@ class OllamaProvider(AIProvider):
         try:
             config = self.settings.get_ai_provider_config("ollama")
             self.base_url = config.get("base_url", "http://localhost:11434")
-            self.model = config.get("model", "llama2")
+            self.model = config.get("model", "llama3.1:latest")
             self.max_tokens = config.get("max_tokens", 2000)
             self.temperature = config.get("temperature", 0.7)
         except Exception as e:
