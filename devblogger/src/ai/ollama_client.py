@@ -51,14 +51,12 @@ class OllamaProvider(AIProvider):
             return False
 
         try:
-            # Try to get available models as a connection test
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return True  # Assume configured means working
-            else:
-                # Test with a simple API call
-                response = asyncio.run(self._test_api_call())
-                return bool(response)
+            # Use synchronous requests for connection testing
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                return "models" in data
+            return False
         except Exception as e:
             self.logger.error(f"Ollama connection test failed: {e}")
             return False
