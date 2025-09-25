@@ -238,6 +238,19 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             # Set up log callback for GitHub auth
             self.github_auth.log_callback = self._add_log_message
 
+            # Generate and display authorization URL immediately
+            try:
+                auth_url = self.github_auth.get_authorization_url()
+                self.auth_url_text.configure(state="normal")
+                self.auth_url_text.delete("1.0", "end")
+                self.auth_url_text.insert("1.0", auth_url)
+                self.auth_url_text.configure(state="disabled")
+                self._add_log_message("🔗 Authorization URL generated and displayed")
+                self._add_log_message(f"🌐 URL: {auth_url}")
+            except Exception as e:
+                self.logger.error(f"Error generating authorization URL: {e}")
+                self._add_log_message(f"❌ Error generating URL: {e}")
+
             # Start monitoring thread
             self.auth_thread = threading.Thread(target=self._monitor_authentication, daemon=True)
             self.auth_thread.start()
