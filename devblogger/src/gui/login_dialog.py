@@ -99,15 +99,39 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         # Instructions
         instructions_label = ctk.CTkLabel(
             main_frame,
-            text="To authenticate with GitHub, you need to authorize this application.\n\n"
-                 "Click the button below to open your browser and complete the login process.\n\n"
-                 "After successful authentication, you can close the browser window\n"
-                 "and return to this application.",
+            text="🔐 GitHub Authentication Required\n\n"
+                 "This application needs permission to access your GitHub repositories.\n\n"
+                 "📋 Step 1: Copy the authorization URL below\n"
+                 "🌐 Step 2: Open it in your web browser\n"
+                 "✅ Step 3: Authorize the application\n"
+                 "🔄 Step 4: Return here - authentication will complete automatically\n\n"
+                 "The browser will redirect to a success page when done.",
             font=ctk.CTkFont(size=12),
             wraplength=440,
             justify="left"
         )
-        instructions_label.pack(pady=(0, 30))
+        instructions_label.pack(pady=(0, 20))
+
+        # Authorization URL display
+        self.url_frame = ctk.CTkFrame(main_frame)
+        self.url_frame.pack(fill="x", pady=(0, 20))
+
+        url_label = ctk.CTkLabel(
+            self.url_frame,
+            text="Authorization URL:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        url_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.auth_url_text = ctk.CTkTextbox(
+            self.url_frame,
+            height=60,
+            font=ctk.CTkFont(size=10),
+            wrap="word"
+        )
+        self.auth_url_text.pack(fill="x", padx=10, pady=(0, 10))
+        self.auth_url_text.insert("1.0", "Generating authorization URL...")
+        self.auth_url_text.configure(state="disabled")
 
         # Progress section
         self.progress_frame = ctk.CTkFrame(main_frame, fg_color="transparent")

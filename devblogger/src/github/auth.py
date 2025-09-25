@@ -93,10 +93,21 @@ class GitHubAuth:
             # Start local server to handle callback
             self._start_callback_server()
 
-            # Open browser for authentication
+            # Generate authorization URL
             auth_url = self.get_authorization_url()
-            self.logger.info(f"Opening browser to: {auth_url}")
-            self._log(f"🔗 Opening browser to: {auth_url}")
+            self.logger.info(f"Authorization URL: {auth_url}")
+            self._log(f"🔗 Authorization URL generated: {auth_url}")
+
+            # Display URL in dialog if available
+            if parent_window and ctk and hasattr(parent_window, 'auth_url_text'):
+                try:
+                    parent_window.auth_url_text.configure(state="normal")
+                    parent_window.auth_url_text.delete("1.0", "end")
+                    parent_window.auth_url_text.insert("1.0", auth_url)
+                    parent_window.auth_url_text.configure(state="disabled")
+                    self._log("📋 Authorization URL displayed in dialog")
+                except Exception as e:
+                    self.logger.error(f"Error displaying URL in dialog: {e}")
 
             if parent_window and ctk:
                 # Show progress dialog
