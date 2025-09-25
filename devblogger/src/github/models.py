@@ -143,15 +143,17 @@ class GitHubCommit:
 
         # Create author and committer users
         author = GitHubUser(
+            login=author_data.get('login', ''),  # GitHub API doesn't always provide login for commit authors
+            id=author_data.get('id', 0),  # Default to 0 if no ID available
             name=author_data.get('name'),
-            email=author_data.get('email'),
-            login=""  # GitHub API doesn't always provide login for commit authors
+            email=author_data.get('email')
         )
 
         committer = GitHubUser(
+            login=committer_data.get('login', ''),  # GitHub API doesn't always provide login for committers
+            id=committer_data.get('id', 0),  # Default to 0 if no ID available
             name=committer_data.get('name'),
-            email=committer_data.get('email'),
-            login=""  # GitHub API doesn't always provide login for committers
+            email=committer_data.get('email')
         )
 
         return cls(

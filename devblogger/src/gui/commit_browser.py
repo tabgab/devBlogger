@@ -265,7 +265,7 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _show_loading_state(self):
         """Show loading state in UI."""
-        self.commit_listbox.delete_all()
+        self.commit_listbox.delete(0, "end")
         self.commit_listbox.insert(0, "Loading commits...")
         self.count_label.configure(text="Loading...")
         self.preview_text.configure(state="normal")
@@ -275,7 +275,7 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _show_error(self, message: str):
         """Show error message."""
-        self.commit_listbox.delete_all()
+        self.commit_listbox.delete(0, "end")
         self.commit_listbox.insert(0, f"Error: {message}")
         self.count_label.configure(text="Error loading commits")
         self.preview_text.configure(state="normal")
@@ -353,7 +353,7 @@ class CommitBrowser(ctk.CTkFrame):
     def _update_commit_list(self):
         """Update the commit list display."""
         # Clear existing items
-        self.commit_listbox.delete_all()
+        self.commit_listbox.delete(0, "end")
         self.commit_message_checkboxes.clear()
         self.commit_comments_checkboxes.clear()
 
