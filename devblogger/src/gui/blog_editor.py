@@ -417,7 +417,7 @@ Message: {commit.message}
             )
 
     def _save_blog_entry(self):
-        """Save blog entry to file."""
+        """Save blog entry to file with user-selected location and name."""
         if not self.current_blog_content:
             self.generation_info.configure(
                 text="⚠ No content to save",
@@ -426,17 +426,46 @@ Message: {commit.message}
             return
 
         try:
-            # Generate filename
+            # Import file dialog
+            from tkinter import filedialog
+            import tkinter as tk
+
+            # Generate default filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             repo_name = self.repository.replace("/", "_")
-            filename = f"{repo_name}_{timestamp}.md"
+            default_filename = f"{repo_name}_{timestamp}.md"
 
-            # Get output directory
-            output_dir = self.settings.get_generated_entries_dir()
-            output_dir.mkdir(parents=True, exist_ok=True)
+            # Get default directory
+            default_dir = self.settings.get_generated_entries_dir()
+            default_dir.mkdir(parents=True, exist_ok=True)
 
-            # Full path
-            filepath = output_dir / filename
+            # Create a temporary root window for the dialog
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window
+
+            # Show save file dialog
+            filepath = filedialog.asksaveasfilename(
+                title="Save Blog Entry",
+                initialdir=str(default_dir),
+                initialfile=default_filename,
+                defaultextension=".md",
+                filetypes=[
+                    ("Markdown files", "*.md"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*")
+                ]
+            )
+
+            # Clean up the temporary root window
+            root.destroy()
+
+            # Check if user cancelled
+            if not filepath:
+                self.generation_info.configure(
+                    text="Save cancelled",
+                    text_color="gray"
+                )
+                return
 
             # Prepare content with metadata
             metadata = f"""---
@@ -455,7 +484,9 @@ generated_by: {self.selected_provider}
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(full_content)
 
-            # Update status instead of showing blocking dialog
+            # Update status with just the filename
+            import os
+            filename = os.path.basename(filepath)
             self.generation_info.configure(
                 text=f"✓ Saved to {filename}",
                 text_color="green"
