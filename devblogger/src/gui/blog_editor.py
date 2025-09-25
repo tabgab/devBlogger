@@ -331,30 +331,48 @@ class BlogEditor(ctk.CTkFrame):
                 # Update progress
                 self.after(0, lambda: self.generation_info.configure(text="Connecting to AI provider..."))
 
-                # Generate blog entry using asyncio
-                import asyncio
+                # Update progress
+                self.after(0, lambda: self.generation_info.configure(text="Generating blog entry... (this may take a while)"))
                 
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
+                # Use synchronous generation to avoid asyncio conflicts
                 try:
-                    # Update progress
-                    self.after(0, lambda: self.generation_info.configure(text="Generating blog entry... (this may take a while)"))
+                    # Get the active provider directly and use synchronous method if available
+                    active_provider = self.ai_manager.get_active_provider()
+                    if not active_provider:
+                        raise Exception("No active AI provider configured")
                     
-                    response = loop.run_until_complete(
-                        self.ai_manager.generate_with_active(
-                            prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
-                            max_tokens=2000,
-                            temperature=0.7
-                        )
+                    # Use synchronous generation method
+                    response_text = active_provider.generate_sync(
+                        prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                        max_tokens=2000,
+                        temperature=0.7
                     )
                     
                     # Update editor with generated content
-                    self.after(0, lambda: self._handle_generation_success(response.text))
+                    self.after(0, lambda: self._handle_generation_success(response_text))
                     
-                finally:
-                    loop.close()
+                except AttributeError:
+                    # Fallback to async method if sync not available
+                    import asyncio
+                    
+                    # Create new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    try:
+                        response = loop.run_until_complete(
+                            self.ai_manager.generate_with_active(
+                                prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                                max_tokens=2000,
+                                temperature=0.7
+                            )
+                        )
+                        
+                        # Update editor with generated content
+                        self.after(0, lambda: self._handle_generation_success(response.text))
+                        
+                    finally:
+                        loop.close()
 
             except Exception as e:
                 error_msg = str(e)

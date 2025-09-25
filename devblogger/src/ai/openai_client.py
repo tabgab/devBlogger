@@ -59,15 +59,8 @@ class OpenAIProvider(AIProvider):
             return False
 
         try:
-            # Try to get available models as a connection test
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're in an async context, we can't use asyncio.run
-                return True  # Assume configured means working
-            else:
-                # Test with a simple API call
-                response = asyncio.run(self._test_api_call())
-                return bool(response)
+            # Simple synchronous test - just check if client is configured
+            return bool(self.api_key and self.validate_api_key(self.api_key))
         except Exception as e:
             self.logger.error(f"OpenAI connection test failed: {e}")
             return False

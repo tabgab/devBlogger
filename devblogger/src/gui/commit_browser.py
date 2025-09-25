@@ -239,7 +239,7 @@ class CommitBrowser(ctk.CTkFrame):
             try:
                 self.logger.info(f"Loading commits for {self.repository}")
 
-                # Show loading state
+                # Show loading state on main thread
                 self.after(0, self._show_loading_state)
 
                 # Get commits from GitHub
@@ -250,12 +250,13 @@ class CommitBrowser(ctk.CTkFrame):
                     per_page=200  # Load more commits for filtering
                 )
 
-                # Store commits
-                self.all_commits = commits
-                self.logger.info(f"Loaded {len(commits)} commits")
+                # Store commits and apply filters on main thread
+                def update_commits():
+                    self.all_commits = commits
+                    self.logger.info(f"Loaded {len(commits)} commits")
+                    self._apply_filters()
 
-                # Apply filters
-                self.after(0, self._apply_filters)
+                self.after(0, update_commits)
 
             except Exception as e:
                 self.logger.error(f"Error loading commits: {e}")

@@ -54,6 +54,40 @@ class AIProvider(ABC):
         """Generate text using AI model."""
         pass
 
+    def generate_sync(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> str:
+        """Generate text synchronously (fallback for threading issues)."""
+        import asyncio
+        try:
+            # Try to get existing event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is running, we can't use run_until_complete
+                # This is a fallback - subclasses should implement proper sync methods
+                raise NotImplementedError("Synchronous generation not implemented for this provider")
+            else:
+                # Loop exists but not running
+                response = loop.run_until_complete(
+                    self.generate_text(prompt, max_tokens, temperature, **kwargs)
+                )
+                return response.text
+        except RuntimeError:
+            # No event loop, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                response = loop.run_until_complete(
+                    self.generate_text(prompt, max_tokens, temperature, **kwargs)
+                )
+                return response.text
+            finally:
+                loop.close()
+
     @abstractmethod
     def get_available_models(self) -> List[str]:
         """Get list of available models for this provider."""

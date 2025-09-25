@@ -576,17 +576,22 @@ class AIConfigurationPanel(ctk.CTkFrame):
             try:
                 provider = self.ai_manager.get_provider(provider_name)
                 if provider and provider.test_connection():
-                    self.after(0, lambda: status_label.configure(text="✓ Working", text_color="green"))
+                    self.after(0, lambda: self._update_test_result(status_label, "✓ Working", "green"))
                 else:
-                    self.after(0, lambda: status_label.configure(text="✗ Not working", text_color="red"))
+                    self.after(0, lambda: self._update_test_result(status_label, "✗ Not working", "red"))
             except Exception as e:
                 self.logger.error(f"Error testing {provider_name}: {e}")
-                self.after(0, lambda: status_label.configure(text="✗ Error", text_color="red"))
+                self.after(0, lambda: self._update_test_result(status_label, "✗ Error", "red"))
             finally:
-                self.test_in_progress = False
+                self.after(0, lambda: setattr(self, 'test_in_progress', False))
 
         import threading
         threading.Thread(target=test_thread, daemon=True).start()
+
+    def _update_test_result(self, status_label: ctk.CTkLabel, text: str, color: str):
+        """Update test result on main thread."""
+        status_label.configure(text=text, text_color=color)
+        self.test_in_progress = False
 
     def _save_chatgpt_config(self):
         """Save ChatGPT configuration."""

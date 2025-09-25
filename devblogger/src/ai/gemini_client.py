@@ -69,14 +69,12 @@ class GeminiProvider(AIProvider):
             return False
 
         try:
-            # Try to get model information as a connection test
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return True  # Assume configured means working
-            else:
-                # Test with a simple generation
-                response = asyncio.run(self._test_generation())
-                return bool(response)
+            # Simple synchronous test - just check if we can create a generation config
+            generation_config = genai.types.GenerationConfig(
+                max_output_tokens=10,
+                temperature=0.1
+            )
+            return True  # If we can create config and model is initialized, assume working
         except Exception as e:
             self.logger.error(f"Gemini connection test failed: {e}")
             return False

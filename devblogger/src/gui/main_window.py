@@ -529,20 +529,22 @@ class MainWindow(ctk.CTk):
             self.repo_dropdown.configure(state="disabled")
             self.repo_dropdown.set("Loading repositories...")
 
-            # Load repositories on main thread to avoid autorelease pool issues on macOS
-            def load_repositories_main_thread():
+            # Load repositories in background thread to avoid blocking UI
+            def load_repositories_thread():
                 try:
                     repositories = self.github_client.get_user_repositories()
                     repo_names = ["Select Repository..."] + [repo.full_name for repo in repositories]
-                    self._update_repository_list(repo_names)
+                    # Schedule UI update on main thread
+                    self.after(0, lambda: self._update_repository_list(repo_names))
 
                 except Exception as e:
                     error_msg = str(e)
                     self.logger.error(f"Error loading repositories: {error_msg}")
-                    self._handle_repository_error(error_msg)
+                    # Schedule error handling on main thread
+                    self.after(0, lambda: self._handle_repository_error(error_msg))
 
-            # Schedule on main thread using after() to avoid blocking UI
-            self.after(100, load_repositories_main_thread)
+            # Start background thread
+            threading.Thread(target=load_repositories_thread, daemon=True).start()
 
         except Exception as e:
             self.logger.error(f"Error refreshing repositories: {e}")
@@ -569,11 +571,20 @@ class MainWindow(ctk.CTk):
 
     def _on_repo_selected(self, repo_name: str):
         """Handle repository selection."""
-        if repo_name == "Select Repository...":
+        if repo_name == "Select Repository..." or not repo_name:
             return
 
         self.current_repo = repo_name
-        self._initialize_commit_browser()
+        
+        # Initialize commit browser in background to avoid blocking UI
+        def init_browser():
+            try:
+                self.after(0, self._initialize_commit_browser)
+            except Exception as e:
+                self.logger.error(f"Error initializing commit browser: {e}")
+        
+        # Schedule on next event loop iteration
+        self.after(10, init_browser)
 
     def _initialize_commit_browser(self):
         """Initialize commit browser for selected repository."""
