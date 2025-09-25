@@ -318,8 +318,9 @@ class CommitBrowser(ctk.CTkFrame):
         if date_range == "All time":
             return commits
 
-        # Calculate cutoff date
-        now = datetime.now()
+        # Calculate cutoff date - use UTC timezone to match GitHub API dates
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         if date_range == "Last 7 days":
             cutoff = now - timedelta(days=7)
         elif date_range == "Last 30 days":
@@ -332,8 +333,15 @@ class CommitBrowser(ctk.CTkFrame):
         # Filter commits
         filtered = []
         for commit in commits:
-            if commit.date and commit.date > cutoff:
-                filtered.append(commit)
+            if commit.date:
+                # Ensure both dates are timezone-aware for comparison
+                commit_date = commit.date
+                if commit_date.tzinfo is None:
+                    # If commit date is naive, assume UTC
+                    commit_date = commit_date.replace(tzinfo=timezone.utc)
+                
+                if commit_date > cutoff:
+                    filtered.append(commit)
 
         return filtered
 
