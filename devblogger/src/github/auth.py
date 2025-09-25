@@ -23,7 +23,11 @@ try:
 except ImportError:
     ctk = None
 
-from ..config.settings import Settings
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.settings import Settings
 
 
 class GitHubAuth:
@@ -98,7 +102,12 @@ class GitHubAuth:
             self.logger.info(f"Authorization URL: {auth_url}")
             self._log(f"🔗 Authorization URL generated: {auth_url}")
 
-            # Display URL in dialog if available
+            # Always log the URL for manual access
+            self._log("🔗 Authorization URL generated successfully!")
+            self._log(f"🌐 URL: {auth_url}")
+            self._log("📋 Copy the URL above and open it in your browser")
+
+            # Try to display URL in dialog if available (don't fail if attributes don't exist)
             if parent_window and ctk:
                 try:
                     # Try to display in manual URL text area (fallback method)
@@ -107,19 +116,15 @@ class GitHubAuth:
                         parent_window.manual_url_text.delete("1.0", "end")
                         parent_window.manual_url_text.insert("1.0", auth_url)
                         parent_window.manual_url_text.configure(state="disabled")
-                        self._log("📋 Authorization URL displayed in manual section")
+                        self._log("📋 Authorization URL displayed in dialog")
                     else:
-                        self._log("⚠️ No URL display area found in dialog - URL will be shown in logs only")
+                        self._log("⚠️ Dialog doesn't have URL display area - check logs for URL")
 
                     self._log("🔗 URL is ready to copy or open in browser")
-                    self._log(f"🌐 Authorization URL: {auth_url}")
                 except Exception as e:
                     self.logger.error(f"Error displaying URL in dialog: {e}")
-                    self._log(f"⚠️ Error displaying URL: {e}")
-                    self._log(f"🔗 Manual URL: {auth_url}")
-
-            # Always log the URL for manual access
-            self._log(f"🔗 Manual URL: {auth_url}")
+                    self._log(f"⚠️ Error displaying URL in dialog: {e}")
+                    # Don't fail the entire authentication if URL display fails
 
             if parent_window and ctk:
                 # Show progress dialog
