@@ -106,8 +106,10 @@ class GitHubAuth:
                     parent_window.auth_url_text.insert("1.0", auth_url)
                     parent_window.auth_url_text.configure(state="disabled")
                     self._log("📋 Authorization URL displayed in dialog")
+                    self._log("🔗 URL is ready to copy or open in browser")
                 except Exception as e:
                     self.logger.error(f"Error displaying URL in dialog: {e}")
+                    self._log(f"⚠️ Error displaying URL: {e}")
 
             if parent_window and ctk:
                 # Show progress dialog

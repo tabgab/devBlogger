@@ -112,26 +112,35 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         instructions_label.pack(pady=(0, 20))
 
-        # Authorization URL display
-        self.url_frame = ctk.CTkFrame(main_frame)
+        # Authorization URL display - make it prominent
+        self.url_frame = ctk.CTkFrame(main_frame, border_width=2, fg_color="lightblue")
         self.url_frame.pack(fill="x", pady=(0, 20))
 
         url_label = ctk.CTkLabel(
             self.url_frame,
-            text="Authorization URL:",
-            font=ctk.CTkFont(size=12, weight="bold")
+            text="🔗 GitHub Authorization URL:",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
         url_label.pack(anchor="w", padx=10, pady=(10, 5))
 
         self.auth_url_text = ctk.CTkTextbox(
             self.url_frame,
-            height=60,
-            font=ctk.CTkFont(size=10),
+            height=80,
+            font=ctk.CTkFont(size=11),
             wrap="word"
         )
         self.auth_url_text.pack(fill="x", padx=10, pady=(0, 10))
-        self.auth_url_text.insert("1.0", "Generating authorization URL...")
+        self.auth_url_text.insert("1.0", "⏳ Generating authorization URL...")
         self.auth_url_text.configure(state="disabled")
+
+        # Copy URL button
+        copy_button = ctk.CTkButton(
+            self.url_frame,
+            text="📋 Copy URL",
+            command=self._copy_url,
+            width=100
+        )
+        copy_button.pack(anchor="e", padx=10, pady=(0, 10))
 
         # Progress section
         self.progress_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
@@ -277,17 +286,44 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             self.logger.info(f"Opening browser to: {auth_url}")
 
             # Update status
-            self.status_label.configure(text="Opening browser...")
+            self.status_label.configure(text="⏳ Opening browser...")
 
             # Open browser
             webbrowser.open(auth_url)
 
             # Update status
-            self.status_label.configure(text="Please complete authentication in your browser...")
+            self.status_label.configure(text="🌐 Waiting for callback from external browser for GitHub authorization...")
 
         except Exception as e:
             self.logger.error(f"Error opening browser: {e}")
             self._show_error(f"Failed to open browser: {str(e)}")
+
+    def _copy_url(self):
+        """Copy the authorization URL to clipboard."""
+        try:
+            auth_url = self.auth_url_text.get("1.0", "end").strip()
+            if auth_url and auth_url != "⏳ Generating authorization URL...":
+                self.clipboard_clear()
+                self.clipboard_append(auth_url)
+                self._add_log_message("📋 Authorization URL copied to clipboard")
+                CTkMessagebox(
+                    title="URL Copied",
+                    message="Authorization URL has been copied to your clipboard.",
+                    icon="info"
+                )
+            else:
+                CTkMessagebox(
+                    title="No URL Available",
+                    message="Authorization URL is not yet available.",
+                    icon="warning"
+                )
+        except Exception as e:
+            self.logger.error(f"Error copying URL: {e}")
+            CTkMessagebox(
+                title="Copy Error",
+                message=f"Failed to copy URL: {str(e)}",
+                icon="cancel"
+            )
 
     def _monitor_authentication(self):
         """Monitor authentication progress in background thread."""
