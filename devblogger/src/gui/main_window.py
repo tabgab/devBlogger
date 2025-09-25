@@ -133,9 +133,9 @@ class MainWindow(ctk.CTk):
 
     def _setup_ui(self):
         """Setup user interface."""
-        # Create main container
+        # Create main container with minimal padding
         self.main_container = ctk.CTkFrame(self)
-        self.main_container.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.main_container.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         self.main_container.grid_columnconfigure(0, weight=1)
         self.main_container.grid_rowconfigure(1, weight=1)
 
@@ -147,9 +147,9 @@ class MainWindow(ctk.CTk):
 
     def _create_header(self):
         """Create application header."""
-        # Header frame
+        # Header frame - make it more compact
         header_frame = ctk.CTkFrame(self.main_container)
-        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        header_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         header_frame.grid_columnconfigure(1, weight=1)
 
         # Title
@@ -228,9 +228,9 @@ class MainWindow(ctk.CTk):
 
     def _create_tabbed_interface(self):
         """Create tabbed interface for main functionality."""
-        # Tab view - remove extra padding to use more space
+        # Tab view - eliminate ALL gaps and padding
         self.tab_view = ctk.CTkTabview(self.main_container)
-        self.tab_view.grid(row=1, column=0, padx=5, pady=(5, 5), sticky="nsew")
+        self.tab_view.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
         self.tab_view.grid_columnconfigure(0, weight=1)
         self.tab_view.grid_rowconfigure(0, weight=1)
 
@@ -243,15 +243,15 @@ class MainWindow(ctk.CTk):
         """Create GitHub integration tab."""
         github_tab = self.tab_view.add("GitHub")
 
-        # GitHub tab content
+        # GitHub tab content - eliminate all padding
         github_content = ctk.CTkFrame(github_tab)
-        github_content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        github_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
         github_content.grid_columnconfigure(0, weight=1)
         github_content.grid_rowconfigure(1, weight=1)
 
-        # GitHub controls
+        # GitHub controls - minimal padding
         github_controls = ctk.CTkFrame(github_content)
-        github_controls.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        github_controls.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
         # Scan repositories button
         self.login_button = ctk.CTkButton(
@@ -302,9 +302,9 @@ class MainWindow(ctk.CTk):
         """Create AI configuration tab."""
         ai_tab = self.tab_view.add("AI Configuration")
 
-        # AI tab content
+        # AI tab content - eliminate all padding
         ai_content = ctk.CTkFrame(ai_tab)
-        ai_content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        ai_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
         ai_content.grid_columnconfigure(0, weight=1)
         ai_content.grid_rowconfigure(0, weight=1)
 
@@ -319,9 +319,9 @@ class MainWindow(ctk.CTk):
         """Create blog generation tab."""
         blog_tab = self.tab_view.add("Blog Generation")
 
-        # Blog tab content
+        # Blog tab content - eliminate all padding
         self.blog_content = ctk.CTkFrame(blog_tab)
-        self.blog_content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.blog_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
         self.blog_content.grid_columnconfigure(0, weight=1)
         self.blog_content.grid_rowconfigure(0, weight=1)
 
