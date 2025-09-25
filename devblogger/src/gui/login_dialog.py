@@ -270,7 +270,10 @@ class GitHubLoginDialog(ctk.CTkToplevel):
 
             # Generate and display authorization URL immediately
             try:
+                self._add_log_message("🔄 Generating authorization URL...")
                 auth_url = self.github_auth.get_authorization_url()
+                self.logger.info(f"Authorization URL generated: {auth_url}")
+
                 # Display in manual URL text area (this should exist)
                 self.manual_url_text.configure(state="normal")
                 self.manual_url_text.delete("1.0", "end")
@@ -279,6 +282,18 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                 self._add_log_message("🔗 Authorization URL generated and displayed")
                 self._add_log_message(f"🌐 URL: {auth_url}")
                 self._add_log_message(f"📋 Copy the URL above and open it in your browser")
+
+                # Also try to open browser automatically
+                self._add_log_message("🌐 Opening browser automatically...")
+                try:
+                    import webbrowser
+                    webbrowser.open(auth_url)
+                    self._add_log_message("✅ Browser opened successfully")
+                except Exception as browser_error:
+                    self.logger.error(f"Error opening browser: {browser_error}")
+                    self._add_log_message(f"⚠️ Could not open browser automatically: {browser_error}")
+                    self._add_log_message(f"🔗 Please manually open this URL: {auth_url}")
+
             except Exception as e:
                 self.logger.error(f"Error generating authorization URL: {e}")
                 self._add_log_message(f"❌ Error generating URL: {e}")
