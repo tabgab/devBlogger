@@ -457,6 +457,13 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                     self.logger.info(f"Authorization code received, waiting for token exchange... ({elapsed:.1f}s elapsed)")
                     self._add_log_message("🔄 Authorization code received, exchanging for token...")
 
+                # Also check if we have user data (indicates successful authentication)
+                if self.github_auth.user_data and not self.github_auth.is_authenticated():
+                    self.logger.info(f"User data received, authentication likely successful after {elapsed:.1f}s!")
+                    self._add_log_message("✅ User data received - authentication successful!")
+                    self.after(0, self._handle_auth_success)
+                    return
+
                 # Wait before checking again
                 time.sleep(0.5)  # Check more frequently
 
