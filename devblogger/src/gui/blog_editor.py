@@ -276,8 +276,14 @@ class BlogEditor(ctk.CTkFrame):
 
         def generate_thread():
             try:
+                # Update progress
+                self.after(0, lambda: self.generation_info.configure(text="Preparing commit data..."))
+                
                 # Prepare commit data for AI
                 commit_data = self._prepare_commit_data()
+
+                # Update progress
+                self.after(0, lambda: self.generation_info.configure(text="Connecting to AI provider..."))
 
                 # Generate blog entry using asyncio
                 import asyncio
@@ -287,6 +293,9 @@ class BlogEditor(ctk.CTkFrame):
                 asyncio.set_event_loop(loop)
                 
                 try:
+                    # Update progress
+                    self.after(0, lambda: self.generation_info.configure(text="Generating blog entry... (this may take a while)"))
+                    
                     response = loop.run_until_complete(
                         self.ai_manager.generate_with_active(
                             prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",

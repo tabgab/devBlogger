@@ -187,7 +187,7 @@ class OllamaProvider(AIProvider):
             "description": f"Local Ollama {model} model"
         }
 
-    def update_config(self, base_url: str, model: str = "llama2"):
+    def update_config(self, base_url: str, model: str = "llama3.1:latest"):
         """Update Ollama configuration."""
         self.base_url = base_url
         self.model = model
