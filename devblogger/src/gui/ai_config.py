@@ -533,13 +533,12 @@ class AIConfigurationPanel(ctk.CTkFrame):
         """Handle active provider change."""
         try:
             self.ai_manager.set_active_provider(provider_name)
-            CTkMessagebox(
-                title="Active Provider Changed",
-                message=f"Active provider set to: {provider_name}",
-                icon="info"
-            )
+            self.logger.info(f"Active provider changed to: {provider_name}")
+            # Update status to reflect the change
+            self._refresh_status()
         except Exception as e:
             self.logger.error(f"Error changing active provider: {e}")
+            # Only show error dialogs, not success dialogs
             CTkMessagebox(
                 title="Error",
                 message=f"Error changing active provider: {str(e)}",
