@@ -127,6 +127,27 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         self.progress_bar.pack(pady=(0, 20))
 
+        # Authentication log text area
+        self.log_frame = ctk.CTkFrame(main_frame)
+        self.log_frame.pack(fill="both", expand=True, pady=(0, 20))
+
+        self.log_label = ctk.CTkLabel(
+            self.log_frame,
+            text="Authentication Log:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.log_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.log_text = ctk.CTkTextbox(
+            self.log_frame,
+            height=150,
+            font=ctk.CTkFont(size=10),
+            wrap="word"
+        )
+        self.log_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.log_text.insert("1.0", "Authentication log will appear here...\n")
+        self.log_text.configure(state="disabled")
+
         # Buttons
         button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         button_frame.pack(fill="x", pady=(20, 0))
@@ -200,6 +221,26 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             self.progress_bar.stop()
             self.authenticate_button.configure(state="normal", text="Open Browser for Authentication")
             self.cancel_button.configure(state="normal")
+
+    def _add_log_message(self, message: str):
+        """Add a message to the authentication log."""
+        try:
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"{time.strftime('%H:%M:%S')} - {message}\n")
+            self.log_text.see("end")  # Scroll to bottom
+            self.log_text.configure(state="disabled")
+        except Exception as e:
+            self.logger.error(f"Error adding log message: {e}")
+
+    def _clear_log(self):
+        """Clear the authentication log."""
+        try:
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.insert("1.0", "Authentication log will appear here...\n")
+            self.log_text.configure(state="disabled")
+        except Exception as e:
+            self.logger.error(f"Error clearing log: {e}")
 
     def _open_browser_auth(self):
         """Open browser for GitHub authentication."""

@@ -79,6 +79,7 @@ class MainWindow(ctk.CTk):
         self.commit_browser: Optional[CommitBrowser] = None
         self.ai_config: Optional[AIConfigurationPanel] = None
         self.blog_editor: Optional[BlogEditor] = None
+        self.auth_in_progress: bool = False  # Prevent multiple auth dialogs
         self.logger.info("GUI state variables initialized")
 
         # Setup window
@@ -400,6 +401,7 @@ class MainWindow(ctk.CTk):
 
     def _on_login_success(self):
         """Handle successful GitHub login."""
+        self.auth_in_progress = False  # Reset the flag
         self._update_github_status(True)
         self._initialize_github_client()
         self._refresh_repositories()
@@ -516,6 +518,16 @@ class MainWindow(ctk.CTk):
         """Scan for available repositories and authenticate if needed."""
         self.logger.info("User clicked 'Scan Available Repos' button")
 
+        # Prevent multiple authentication dialogs
+        if self.auth_in_progress:
+            self.logger.warning("Authentication already in progress, ignoring duplicate request")
+            CTkMessagebox(
+                title="Authentication In Progress",
+                message="Authentication is already in progress. Please wait for the current process to complete.",
+                icon="info"
+            )
+            return
+
         if not self.github_auth.is_configured():
             self.logger.warning("GitHub OAuth is not configured")
             CTkMessagebox(
@@ -529,6 +541,7 @@ class MainWindow(ctk.CTk):
 
         if not self.github_auth.is_authenticated():
             self.logger.info("User not authenticated, starting authentication process")
+            self.auth_in_progress = True
             # Need to authenticate first
             self.login_dialog = GitHubLoginDialog(self, self.github_auth, self._on_login_success)
         else:
