@@ -458,8 +458,9 @@ class MainWindow(ctk.CTk):
                     self.after(0, lambda: self._update_repository_list(repo_names))
 
                 except Exception as e:
-                    self.logger.error(f"Error loading repositories: {e}")
-                    self.after(0, lambda: self._handle_repository_error(str(e)))
+                    error_msg = str(e)
+                    self.logger.error(f"Error loading repositories: {error_msg}")
+                    self.after(0, lambda: self._handle_repository_error(error_msg))
 
             threading.Thread(target=load_repositories, daemon=True).start()
 

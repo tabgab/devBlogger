@@ -48,6 +48,11 @@ def debug_main():
             logging.StreamHandler()
         ]
     )
+    
+    # Disable PIL debug logging that causes autorelease pool issues on macOS
+    pil_logger = logging.getLogger('PIL')
+    pil_logger.setLevel(logging.WARNING)
+    
     logger = logging.getLogger(__name__)
     logger.info("Starting debug version of DevBlogger")
 
@@ -246,6 +251,11 @@ class DevBloggerApp:
             os.environ['PYTHONUNBUFFERED'] = '1'
             # Disable certain macOS features that can cause threading issues
             os.environ['TK_SILENCE_DEPRECATION'] = '1'
+            # Disable PIL image processing that causes autorelease pool issues
+            os.environ['PIL_DISABLE_PLATFORM_GUESSING'] = '1'
+            # Force single-threaded operation
+            os.environ['OMP_NUM_THREADS'] = '1'
+            os.environ['MKL_NUM_THREADS'] = '1'
 
         # Set CustomTkinter appearance
         ctk.set_appearance_mode("System")  # "System", "Dark", or "Light"
