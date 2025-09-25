@@ -514,7 +514,10 @@ class MainWindow(ctk.CTk):
 
     def _scan_repositories(self):
         """Scan for available repositories and authenticate if needed."""
+        self.logger.info("User clicked 'Scan Available Repos' button")
+
         if not self.github_auth.is_configured():
+            self.logger.warning("GitHub OAuth is not configured")
             CTkMessagebox(
                 title="Configuration Required",
                 message="GitHub OAuth is not configured. Please check your settings first.",
@@ -522,10 +525,14 @@ class MainWindow(ctk.CTk):
             )
             return
 
+        self.logger.info(f"GitHub auth configured: client_id={self.github_auth.client_id[:10]}..., redirect_uri={self.github_auth.redirect_uri}")
+
         if not self.github_auth.is_authenticated():
+            self.logger.info("User not authenticated, starting authentication process")
             # Need to authenticate first
             self.login_dialog = GitHubLoginDialog(self, self.github_auth, self._on_login_success)
         else:
+            self.logger.info("User already authenticated, refreshing repositories")
             # Already authenticated, just refresh repositories
             self._refresh_repositories()
 

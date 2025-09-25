@@ -113,13 +113,15 @@ class GitHubAuth:
             self.logger.info("Waiting for authentication to complete")
             self._wait_for_authentication()
 
-            if self.access_token:
+            # Exchange authorization code for access token
+            self.logger.info("Exchanging authorization code for access token")
+            if self._exchange_code_for_token():
                 # Get user data
                 self.logger.info("Authentication successful, getting user data")
                 self._get_user_data()
                 return True
             else:
-                self.logger.error("Authentication failed - no access token received")
+                self.logger.error("Authentication failed - could not exchange code for token")
                 return False
 
         except Exception as e:
@@ -137,21 +139,36 @@ class GitHubAuth:
 
             class CallbackHandler(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
+                    self.logger.info(f"Callback received: {self.path}")
+
                     # Parse query parameters
                     parsed_url = urlparse(self.path)
                     query_params = parse_qs(parsed_url.query)
+                    self.logger.info(f"Query parameters: {query_params}")
 
                     # Verify state parameter
                     returned_state = query_params.get('state', [''])[0]
-                    if returned_state != self.state:
+                    expected_state = CallbackHandler.auth_instance.state
+                    self.logger.info(f"Received state: {returned_state}")
+                    self.logger.info(f"Expected state: {expected_state}")
+
+                    if returned_state != expected_state:
+                        self.logger.error(f"State mismatch! Received: {returned_state}, Expected: {expected_state}")
                         self.send_error(400, "Invalid state parameter")
                         return
 
                     # Get authorization code
                     self.auth_code = query_params.get('code', [''])[0]
+                    self.logger.info(f"Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "No authorization code received")
+
                     if not self.auth_code:
+                        self.logger.error("No authorization code in callback")
                         self.send_error(400, "No authorization code received")
                         return
+
+                    # Store the authorization code in the auth instance
+                    CallbackHandler.auth_instance.auth_code = self.auth_code
+                    self.logger.info("Authorization code stored successfully")
 
                     # Send success response
                     self.send_response(200)
@@ -177,19 +194,21 @@ class GitHubAuth:
                     '''
 
                     self.wfile.write(response_html.encode())
+                    self.logger.info("Success response sent to browser")
 
                 def log_message(self, format, *args):
-                    # Suppress default logging
-                    pass
+                    # Add logger to callback handler
+                    self.logger = CallbackHandler.auth_instance.logger
+                    self.logger.info(f"HTTP {format % args}")
 
             # Store reference to auth instance
             CallbackHandler.auth_instance = self
 
-            # Start server
-            with socketserver.TCPServer(("", port), CallbackHandler) as httpd:
-                self.callback_server = httpd
-                self.logger.info(f"Callback server started on port {port}")
-                httpd.serve_forever()
+            # Start server in a separate thread
+            self.callback_server = socketserver.TCPServer(("", port), CallbackHandler)
+            self.server_thread = threading.Thread(target=self.callback_server.serve_forever, daemon=True)
+            self.server_thread.start()
+            self.logger.info(f"Callback server started on port {port}")
 
         except Exception as e:
             self.logger.error(f"Failed to start callback server: {e}")
@@ -227,9 +246,12 @@ class GitHubAuth:
         import requests
 
         if not self.auth_code:
+            self.logger.error("No authorization code available for token exchange")
             return False
 
         try:
+            self.logger.info(f"Starting token exchange with code: {self.auth_code[:10]}...")
+
             # Prepare token exchange request
             data = {
                 'client_id': self.client_id,
@@ -243,6 +265,9 @@ class GitHubAuth:
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
 
+            self.logger.info(f"Sending token exchange request to: https://github.com/login/oauth/access_token")
+            self.logger.info(f"Request data: client_id={self.client_id[:10]}..., redirect_uri={self.redirect_uri}")
+
             # Exchange code for token
             response = requests.post(
                 'https://github.com/login/oauth/access_token',
@@ -251,25 +276,33 @@ class GitHubAuth:
                 timeout=30
             )
 
+            self.logger.info(f"Token exchange response status: {response.status_code}")
+            self.logger.info(f"Token exchange response headers: {dict(response.headers)}")
+
             if response.status_code == 200:
                 token_data = response.json()
+                self.logger.info(f"Token exchange response data: {token_data}")
+
                 self.access_token = token_data.get('access_token')
+                self.logger.info(f"Access token obtained: {self.access_token[:20]}..." if self.access_token else "No access token in response")
 
                 if token_data.get('token_type') != 'bearer':
                     self.logger.warning(f"Unexpected token type: {token_data.get('token_type')}")
 
                 if 'error' in token_data:
                     self.logger.error(f"Token exchange error: {token_data['error']}")
+                    self.logger.error(f"Error description: {token_data.get('error_description', 'No description')}")
                     return False
 
                 self.logger.info("Successfully obtained access token")
                 return True
             else:
                 self.logger.error(f"Token exchange failed: {response.status_code} - {response.text}")
+                self.logger.error(f"Full response: {response.content}")
                 return False
 
         except Exception as e:
-            self.logger.error(f"Error exchanging code for token: {e}")
+            self.logger.error(f"Error exchanging code for token: {e}", exc_info=True)
             return False
 
     def _get_user_data(self) -> bool:
@@ -277,14 +310,19 @@ class GitHubAuth:
         import requests
 
         if not self.access_token:
+            self.logger.error("No access token available for user data retrieval")
             return False
 
         try:
+            self.logger.info(f"Getting user data with access token: {self.access_token[:20]}...")
+
             headers = {
                 'Authorization': f'Bearer {self.access_token}',
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'DevBlogger/1.0'
             }
+
+            self.logger.info("Sending user data request to: https://api.github.com/user")
 
             # Get user data
             response = requests.get(
@@ -293,16 +331,21 @@ class GitHubAuth:
                 timeout=30
             )
 
+            self.logger.info(f"User data response status: {response.status_code}")
+            self.logger.info(f"User data response headers: {dict(response.headers)}")
+
             if response.status_code == 200:
                 self.user_data = response.json()
+                self.logger.info(f"User data response: {self.user_data}")
                 self.logger.info(f"Successfully authenticated as: {self.user_data.get('login', 'unknown')}")
                 return True
             else:
                 self.logger.error(f"Failed to get user data: {response.status_code} - {response.text}")
+                self.logger.error(f"Full response: {response.content}")
                 return False
 
         except Exception as e:
-            self.logger.error(f"Error getting user data: {e}")
+            self.logger.error(f"Error getting user data: {e}", exc_info=True)
             return False
 
     def _show_auth_dialog(self, parent_window):
@@ -316,9 +359,9 @@ class GitHubAuth:
             dialog.geometry("400x200")
             dialog.resizable(False, False)
 
-            # Center dialog on parent
+            # Center dialog on parent without modal behavior to prevent blocking
             dialog.transient(parent_window)
-            dialog.grab_set()
+            # Don't use grab_set() as it can cause the main thread to hang
 
             # Dialog content
             title_label = CTkLabel(
@@ -351,7 +394,9 @@ class GitHubAuth:
         if self.callback_server:
             try:
                 self.callback_server.shutdown()
+                self.callback_server.server_close()
                 self.callback_server = None
+                self.server_thread = None
             except Exception as e:
                 self.logger.error(f"Error stopping callback server: {e}")
 

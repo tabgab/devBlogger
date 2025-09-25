@@ -1,0 +1,73 @@
+# DevBlogger - Git ignore file for sensitive data
+
+# Configuration files with secrets
+~/.devblogger/config.json
+devblogger_config.json
+config.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+logs/
+
+# Generated entries
+Generated_Entries/
+generated_entries/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test coverage
+.coverage
+htmlcov/
+.tox/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Secrets and keys
+secrets.json
+keys.json
+*.key
+*.pem

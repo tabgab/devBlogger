@@ -168,6 +168,9 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         """Start the authentication process."""
         try:
             self.logger.info("Starting authentication process")
+            self.logger.info(f"GitHub auth configured: {self.github_auth.is_configured()}")
+            self.logger.info(f"GitHub auth client_id: {self.github_auth.client_id[:10]}..." if self.github_auth.client_id else "No client_id")
+
             if not self.github_auth.is_configured():
                 self.logger.error("GitHub OAuth is not configured")
                 self._show_error("GitHub OAuth is not configured. Please check your settings.")
