@@ -243,9 +243,33 @@ class DevBloggerApp:
         ctk.set_appearance_mode("System")  # "System", "Dark", or "Light"
         ctk.set_default_color_theme("blue")  # "blue", "green", or "dark-blue"
 
-        # Create and run the main window
-        self.main_window = MainWindow(self.settings, self.database)
-        self.main_window.mainloop()
+        # Create and run the main window with proper macOS autorelease pool management
+        try:
+            # Try to set up proper autorelease pool for macOS
+            import platform
+            if platform.system() == "Darwin":  # macOS
+                try:
+                    import objc
+                    # Create an autorelease pool for the main thread
+                    pool = objc.NSAutoreleasePool.alloc().init()
+                    try:
+                        self.main_window = MainWindow(self.settings, self.database)
+                        self.main_window.mainloop()
+                    finally:
+                        pool.drain()
+                except ImportError:
+                    # objc not available, run without pool management
+                    self.main_window = MainWindow(self.settings, self.database)
+                    self.main_window.mainloop()
+            else:
+                # Not macOS, run normally
+                self.main_window = MainWindow(self.settings, self.database)
+                self.main_window.mainloop()
+        except Exception as e:
+            print(f"Error running main window: {e}")
+            # Fallback to basic execution
+            self.main_window = MainWindow(self.settings, self.database)
+            self.main_window.mainloop()
 
     def _initialize_config(self):
         """Initialize application configuration and database."""
