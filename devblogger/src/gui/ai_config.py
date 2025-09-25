@@ -37,14 +37,14 @@ class AIConfigurationPanel(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # Header
+        # Header - reduce padding
         header_frame = ctk.CTkFrame(self)
-        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        header_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
         title_label = ctk.CTkLabel(
             header_frame,
             text="AI Provider Configuration",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")  # Smaller font
         )
         title_label.grid(row=0, column=0, padx=(0, 20))
 
@@ -57,9 +57,9 @@ class AIConfigurationPanel(ctk.CTkFrame):
         )
         self.status_label.grid(row=0, column=1)
 
-        # Main content
+        # Main content - reduce padding
         content_frame = ctk.CTkFrame(self)
-        content_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        content_frame.grid(row=1, column=0, padx=5, pady=(0, 5), sticky="nsew")
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_rowconfigure(0, weight=1)
 
@@ -67,33 +67,114 @@ class AIConfigurationPanel(ctk.CTkFrame):
         self._create_provider_tabs(content_frame)
 
     def _create_provider_tabs(self, parent):
-        """Create tabbed interface for different providers."""
-        # Tab view
-        self.tab_view = ctk.CTkTabview(parent)
-        self.tab_view.grid(row=0, column=0, sticky="nsew")
-        self.tab_view.grid_columnconfigure(0, weight=1)
-        self.tab_view.grid_rowconfigure(0, weight=1)
+        """Create custom tabbed interface for different providers."""
+        # Create tab buttons frame - positioned at top
+        self.tab_buttons_frame = ctk.CTkFrame(parent)
+        self.tab_buttons_frame.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
+        
+        # Create tab content frame - takes up remaining space
+        self.tab_content_frame = ctk.CTkFrame(parent)
+        self.tab_content_frame.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
+        self.tab_content_frame.grid_columnconfigure(0, weight=1)
+        self.tab_content_frame.grid_rowconfigure(0, weight=1)
+        
+        # Create common controls frame - at bottom
+        self.common_controls_frame = ctk.CTkFrame(parent)
+        self.common_controls_frame.grid(row=2, column=0, padx=0, pady=0, sticky="ew")
+        
+        # Update parent grid to give weight to content area
+        parent.grid_rowconfigure(0, weight=0)  # Tab buttons - no weight
+        parent.grid_rowconfigure(1, weight=1)  # Tab content - all weight
+        parent.grid_rowconfigure(2, weight=0)  # Common controls - no weight
+        
+        # Create tab buttons
+        self.current_provider_tab = "ChatGPT"
+        self._create_provider_tab_buttons()
+        
+        # Create tab content areas
+        self._create_provider_tab_contents()
+        
+        # Create common controls
+        self._create_common_controls()
+        
+        # Show initial tab
+        self._show_provider_tab("ChatGPT")
 
-        # Create tabs for each provider
-        self._create_chatgpt_tab()
-        self._create_gemini_tab()
-        self._create_ollama_tab()
+    def _create_provider_tab_buttons(self):
+        """Create custom tab buttons for AI providers."""
+        self.provider_tab_buttons = {}
+        
+        # ChatGPT tab button
+        chatgpt_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="ChatGPT",
+            command=lambda: self._show_provider_tab("ChatGPT"),
+            width=120
+        )
+        chatgpt_btn.grid(row=0, column=0, padx=(5, 2), pady=5)
+        self.provider_tab_buttons["ChatGPT"] = chatgpt_btn
+        
+        # Gemini tab button
+        gemini_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="Gemini",
+            command=lambda: self._show_provider_tab("Gemini"),
+            width=120
+        )
+        gemini_btn.grid(row=0, column=1, padx=2, pady=5)
+        self.provider_tab_buttons["Gemini"] = gemini_btn
+        
+        # Ollama tab button
+        ollama_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="Ollama",
+            command=lambda: self._show_provider_tab("Ollama"),
+            width=120
+        )
+        ollama_btn.grid(row=0, column=2, padx=(2, 5), pady=5)
+        self.provider_tab_buttons["Ollama"] = ollama_btn
 
-        # Common controls
-        self._create_common_controls(parent)
+    def _create_provider_tab_contents(self):
+        """Create tab content areas for AI providers."""
+        self.provider_tab_contents = {}
+        
+        # ChatGPT tab content
+        self._create_chatgpt_content()
+        
+        # Gemini tab content
+        self._create_gemini_content()
+        
+        # Ollama tab content
+        self._create_ollama_content()
 
-    def _create_chatgpt_tab(self):
-        """Create ChatGPT configuration tab."""
-        chatgpt_tab = self.tab_view.add("ChatGPT")
+    def _show_provider_tab(self, tab_name):
+        """Show the specified provider tab."""
+        # Hide all tab contents
+        for name, content in self.provider_tab_contents.items():
+            content.grid_remove()
+        
+        # Update button states
+        for name, button in self.provider_tab_buttons.items():
+            if name == tab_name:
+                button.configure(fg_color=("gray75", "gray25"))  # Active state
+            else:
+                button.configure(fg_color=("gray90", "gray13"))  # Inactive state
+        
+        # Show selected tab content
+        if tab_name in self.provider_tab_contents:
+            self.provider_tab_contents[tab_name].grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+        
+        self.current_provider_tab = tab_name
 
-        # ChatGPT configuration content
-        content = ctk.CTkFrame(chatgpt_tab)
-        content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    def _create_chatgpt_content(self):
+        """Create ChatGPT configuration content."""
+        content = ctk.CTkFrame(self.tab_content_frame)
         content.grid_columnconfigure(1, weight=1)
+        self.provider_tab_contents["ChatGPT"] = content
 
         # API Key
         api_key_label = ctk.CTkLabel(content, text="API Key:")
-        api_key_label.grid(row=0, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        api_key_label.grid(row=0, column=0, padx=(10, 10), pady=(10, 5), sticky="w")
 
         self.chatgpt_api_key = ctk.CTkEntry(
             content,
@@ -101,11 +182,11 @@ class AIConfigurationPanel(ctk.CTkFrame):
             show="•",
             width=300
         )
-        self.chatgpt_api_key.grid(row=0, column=1, padx=(0, 10), pady=(0, 5), sticky="ew")
+        self.chatgpt_api_key.grid(row=0, column=1, padx=(0, 10), pady=(10, 5), sticky="ew")
 
         # Model selection
         model_label = ctk.CTkLabel(content, text="Model:")
-        model_label.grid(row=1, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        model_label.grid(row=1, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.chatgpt_model = ctk.CTkOptionMenu(
             content,
@@ -116,7 +197,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Max tokens
         max_tokens_label = ctk.CTkLabel(content, text="Max Tokens:")
-        max_tokens_label.grid(row=2, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        max_tokens_label.grid(row=2, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.chatgpt_max_tokens = ctk.CTkEntry(content, width=100)
         self.chatgpt_max_tokens.insert(0, "2000")
@@ -124,7 +205,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Temperature
         temp_label = ctk.CTkLabel(content, text="Temperature:")
-        temp_label.grid(row=3, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        temp_label.grid(row=3, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.chatgpt_temperature = ctk.CTkEntry(content, width=100)
         self.chatgpt_temperature.insert(0, "0.7")
@@ -137,7 +218,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             command=self._test_chatgpt,
             width=120
         )
-        test_button.grid(row=4, column=0, padx=(0, 10), pady=(20, 0))
+        test_button.grid(row=4, column=0, padx=(10, 10), pady=(20, 0))
 
         # Save button
         save_button = ctk.CTkButton(
@@ -157,20 +238,17 @@ class AIConfigurationPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="red"
         )
-        self.chatgpt_status.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+        self.chatgpt_status.grid(row=5, column=0, columnspan=2, pady=(10, 10))
 
-    def _create_gemini_tab(self):
-        """Create Google Gemini configuration tab."""
-        gemini_tab = self.tab_view.add("Gemini")
-
-        # Gemini configuration content
-        content = ctk.CTkFrame(gemini_tab)
-        content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    def _create_gemini_content(self):
+        """Create Gemini configuration content."""
+        content = ctk.CTkFrame(self.tab_content_frame)
         content.grid_columnconfigure(1, weight=1)
+        self.provider_tab_contents["Gemini"] = content
 
         # API Key
         api_key_label = ctk.CTkLabel(content, text="API Key:")
-        api_key_label.grid(row=0, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        api_key_label.grid(row=0, column=0, padx=(10, 10), pady=(10, 5), sticky="w")
 
         self.gemini_api_key = ctk.CTkEntry(
             content,
@@ -178,11 +256,11 @@ class AIConfigurationPanel(ctk.CTkFrame):
             show="•",
             width=300
         )
-        self.gemini_api_key.grid(row=0, column=1, padx=(0, 10), pady=(0, 5), sticky="ew")
+        self.gemini_api_key.grid(row=0, column=1, padx=(0, 10), pady=(10, 5), sticky="ew")
 
         # Model selection
         model_label = ctk.CTkLabel(content, text="Model:")
-        model_label.grid(row=1, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        model_label.grid(row=1, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.gemini_model = ctk.CTkOptionMenu(
             content,
@@ -193,7 +271,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Max tokens
         max_tokens_label = ctk.CTkLabel(content, text="Max Tokens:")
-        max_tokens_label.grid(row=2, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        max_tokens_label.grid(row=2, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.gemini_max_tokens = ctk.CTkEntry(content, width=100)
         self.gemini_max_tokens.insert(0, "2000")
@@ -201,7 +279,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Temperature
         temp_label = ctk.CTkLabel(content, text="Temperature:")
-        temp_label.grid(row=3, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        temp_label.grid(row=3, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.gemini_temperature = ctk.CTkEntry(content, width=100)
         self.gemini_temperature.insert(0, "0.7")
@@ -214,7 +292,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             command=self._test_gemini,
             width=120
         )
-        test_button.grid(row=4, column=0, padx=(0, 10), pady=(20, 0))
+        test_button.grid(row=4, column=0, padx=(10, 10), pady=(20, 0))
 
         # Save button
         save_button = ctk.CTkButton(
@@ -234,20 +312,17 @@ class AIConfigurationPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="red"
         )
-        self.gemini_status.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+        self.gemini_status.grid(row=5, column=0, columnspan=2, pady=(10, 10))
 
-    def _create_ollama_tab(self):
-        """Create Ollama configuration tab."""
-        ollama_tab = self.tab_view.add("Ollama")
-
-        # Ollama configuration content
-        content = ctk.CTkFrame(ollama_tab)
-        content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    def _create_ollama_content(self):
+        """Create Ollama configuration content."""
+        content = ctk.CTkFrame(self.tab_content_frame)
         content.grid_columnconfigure(1, weight=1)
+        self.provider_tab_contents["Ollama"] = content
 
         # Base URL
         url_label = ctk.CTkLabel(content, text="Base URL:")
-        url_label.grid(row=0, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        url_label.grid(row=0, column=0, padx=(10, 10), pady=(10, 5), sticky="w")
 
         self.ollama_url = ctk.CTkEntry(
             content,
@@ -255,11 +330,11 @@ class AIConfigurationPanel(ctk.CTkFrame):
             width=300
         )
         self.ollama_url.insert(0, "http://localhost:11434")
-        self.ollama_url.grid(row=0, column=1, padx=(0, 10), pady=(0, 5), sticky="ew")
+        self.ollama_url.grid(row=0, column=1, padx=(0, 10), pady=(10, 5), sticky="ew")
 
         # Model selection
         model_label = ctk.CTkLabel(content, text="Model:")
-        model_label.grid(row=1, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        model_label.grid(row=1, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         # Model input frame for both dropdown and manual entry
         model_frame = ctk.CTkFrame(content, fg_color="transparent")
@@ -294,7 +369,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Max tokens
         max_tokens_label = ctk.CTkLabel(content, text="Max Tokens:")
-        max_tokens_label.grid(row=3, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        max_tokens_label.grid(row=3, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.ollama_max_tokens = ctk.CTkEntry(content, width=100)
         self.ollama_max_tokens.insert(0, "2000")
@@ -302,7 +377,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
 
         # Temperature
         temp_label = ctk.CTkLabel(content, text="Temperature:")
-        temp_label.grid(row=4, column=0, padx=(0, 10), pady=(0, 5), sticky="w")
+        temp_label.grid(row=4, column=0, padx=(10, 10), pady=(0, 5), sticky="w")
 
         self.ollama_temperature = ctk.CTkEntry(content, width=100)
         self.ollama_temperature.insert(0, "0.7")
@@ -315,7 +390,7 @@ class AIConfigurationPanel(ctk.CTkFrame):
             command=self._test_ollama,
             width=120
         )
-        test_button.grid(row=5, column=0, padx=(0, 10), pady=(20, 0))
+        test_button.grid(row=5, column=0, padx=(10, 10), pady=(20, 0))
 
         # Save button
         save_button = ctk.CTkButton(
@@ -335,45 +410,42 @@ class AIConfigurationPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="red"
         )
-        self.ollama_status.grid(row=6, column=0, columnspan=2, pady=(10, 0))
+        self.ollama_status.grid(row=6, column=0, columnspan=2, pady=(10, 10))
 
-    def _create_common_controls(self, parent):
+
+    def _create_common_controls(self):
         """Create common controls for all providers."""
-        # Common controls frame
-        controls_frame = ctk.CTkFrame(parent)
-        controls_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-
         # Active provider selection
-        provider_label = ctk.CTkLabel(controls_frame, text="Active Provider:")
-        provider_label.grid(row=0, column=0, padx=(0, 10))
+        provider_label = ctk.CTkLabel(self.common_controls_frame, text="Active Provider:")
+        provider_label.grid(row=0, column=0, padx=(10, 10), pady=5)
 
         self.active_provider_var = ctk.StringVar()
         self.active_provider_dropdown = ctk.CTkOptionMenu(
-            controls_frame,
+            self.common_controls_frame,
             variable=self.active_provider_var,
             values=["Loading..."],
             command=self._on_active_provider_changed,
             width=150
         )
-        self.active_provider_dropdown.grid(row=0, column=1, padx=(0, 10))
+        self.active_provider_dropdown.grid(row=0, column=1, padx=(0, 10), pady=5)
 
         # Refresh status button
         refresh_button = ctk.CTkButton(
-            controls_frame,
+            self.common_controls_frame,
             text="Refresh Status",
             command=self._refresh_status,
             width=120
         )
-        refresh_button.grid(row=0, column=2, padx=(0, 10))
+        refresh_button.grid(row=0, column=2, padx=(0, 10), pady=5)
 
         # Test all providers button
         test_all_button = ctk.CTkButton(
-            controls_frame,
+            self.common_controls_frame,
             text="Test All",
             command=self._test_all_providers,
             width=100
         )
-        test_all_button.grid(row=0, column=3)
+        test_all_button.grid(row=0, column=3, padx=(0, 10), pady=5)
 
     def _load_providers(self):
         """Load provider configurations and status."""

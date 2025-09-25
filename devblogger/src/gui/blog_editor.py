@@ -181,6 +181,50 @@ class BlogEditor(ctk.CTkFrame):
         )
         editor_title.grid(row=0, column=0)
 
+        # Font size controls
+        font_controls_frame = ctk.CTkFrame(editor_header, fg_color="transparent")
+        font_controls_frame.grid(row=0, column=1, padx=(10, 10))
+
+        # Font size label
+        font_size_label = ctk.CTkLabel(
+            font_controls_frame,
+            text="Font:",
+            font=ctk.CTkFont(size=11)
+        )
+        font_size_label.grid(row=0, column=0, padx=(0, 5))
+
+        # Font size decrease button
+        self.font_decrease_btn = ctk.CTkButton(
+            font_controls_frame,
+            text="A-",
+            command=self._decrease_font_size,
+            width=30,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        self.font_decrease_btn.grid(row=0, column=1, padx=(0, 2))
+
+        # Current font size display
+        self.current_font_size = 12  # Default font size
+        self.font_size_display = ctk.CTkLabel(
+            font_controls_frame,
+            text=str(self.current_font_size),
+            font=ctk.CTkFont(size=10),
+            width=25
+        )
+        self.font_size_display.grid(row=0, column=2, padx=2)
+
+        # Font size increase button
+        self.font_increase_btn = ctk.CTkButton(
+            font_controls_frame,
+            text="A+",
+            command=self._increase_font_size,
+            width=30,
+            height=25,
+            font=ctk.CTkFont(size=10)
+        )
+        self.font_increase_btn.grid(row=0, column=3, padx=(2, 0))
+
         # Generation info
         self.generation_info = ctk.CTkLabel(
             editor_header,
@@ -188,7 +232,7 @@ class BlogEditor(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.generation_info.grid(row=0, column=1, padx=(20, 0), sticky="e")
+        self.generation_info.grid(row=0, column=2, padx=(20, 0), sticky="e")
 
         # Text editor
         editor_container = ctk.CTkFrame(editor_frame)
@@ -638,3 +682,24 @@ generated_by: {self.selected_provider}
             message=f"Blog entry regenerated successfully using {provider_name}!",
             icon="check"
         )
+
+    def _increase_font_size(self):
+        """Increase font size of the blog editor."""
+        if self.current_font_size < 24:  # Maximum font size
+            self.current_font_size += 1
+            self._update_editor_font()
+
+    def _decrease_font_size(self):
+        """Decrease font size of the blog editor."""
+        if self.current_font_size > 8:  # Minimum font size
+            self.current_font_size -= 1
+            self._update_editor_font()
+
+    def _update_editor_font(self):
+        """Update the font size of the blog editor."""
+        new_font = ctk.CTkFont(size=self.current_font_size)
+        self.blog_editor.configure(font=new_font)
+        self.font_size_display.configure(text=str(self.current_font_size))
+        
+        # Log the font size change
+        self.logger.info(f"Blog editor font size changed to {self.current_font_size}")

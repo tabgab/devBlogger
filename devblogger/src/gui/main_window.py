@@ -133,9 +133,9 @@ class MainWindow(ctk.CTk):
 
     def _setup_ui(self):
         """Setup user interface."""
-        # Create main container with minimal padding
-        self.main_container = ctk.CTkFrame(self)
-        self.main_container.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        # Create main container with NO padding and NO frame borders
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_container.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
         self.main_container.grid_columnconfigure(0, weight=1)
         self.main_container.grid_rowconfigure(1, weight=1)
 
@@ -147,9 +147,9 @@ class MainWindow(ctk.CTk):
 
     def _create_header(self):
         """Create application header."""
-        # Header frame - make it more compact
+        # Header frame - eliminate all padding
         header_frame = ctk.CTkFrame(self.main_container)
-        header_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        header_frame.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
         header_frame.grid_columnconfigure(1, weight=1)
 
         # Title
@@ -158,7 +158,7 @@ class MainWindow(ctk.CTk):
             text="DevBlogger",
             font=ctk.CTkFont(size=24, weight="bold")
         )
-        title_label.grid(row=0, column=0, padx=(0, 20))
+        title_label.grid(row=0, column=0, padx=(10, 20), pady=10)
 
         # Status indicators
         self._create_status_indicators(header_frame)
@@ -215,7 +215,7 @@ class MainWindow(ctk.CTk):
             command=self._show_settings,
             width=80
         )
-        settings_button.grid(row=0, column=3, padx=(0, 10))
+        settings_button.grid(row=0, column=3, padx=(0, 10), pady=10)
 
         # About button
         about_button = ctk.CTkButton(
@@ -224,32 +224,89 @@ class MainWindow(ctk.CTk):
             command=self._show_about,
             width=80
         )
-        about_button.grid(row=0, column=4)
+        about_button.grid(row=0, column=4, padx=(0, 10), pady=10)
 
     def _create_tabbed_interface(self):
-        """Create tabbed interface for main functionality."""
-        # Tab view - eliminate ALL gaps and padding
-        self.tab_view = ctk.CTkTabview(self.main_container)
-        self.tab_view.grid(row=1, column=0, padx=0, pady=0, sticky="nsew")
-        self.tab_view.grid_columnconfigure(0, weight=1)
-        self.tab_view.grid_rowconfigure(0, weight=1)
+        """Create custom tabbed interface with no wasted space."""
+        # Create tab buttons frame - positioned immediately below header
+        self.tab_buttons_frame = ctk.CTkFrame(self.main_container)
+        self.tab_buttons_frame.grid(row=1, column=0, padx=0, pady=0, sticky="ew")
+        
+        # Create tab content frame - takes up all remaining space
+        self.tab_content_frame = ctk.CTkFrame(self.main_container)
+        self.tab_content_frame.grid(row=2, column=0, padx=0, pady=0, sticky="nsew")
+        self.tab_content_frame.grid_columnconfigure(0, weight=1)
+        self.tab_content_frame.grid_rowconfigure(0, weight=1)
+        
+        # Update main container to give weight to row 2 (content) instead of row 1
+        self.main_container.grid_rowconfigure(1, weight=0)  # Tab buttons - no weight
+        self.main_container.grid_rowconfigure(2, weight=1)  # Tab content - all weight
+        
+        # Create tab buttons
+        self.current_tab = "GitHub"
+        self._create_tab_buttons()
+        
+        # Create tab content areas
+        self._create_tab_contents()
+        
+        # Show initial tab
+        self._show_tab("GitHub")
 
-        # Create tabs
-        self._create_github_tab()
-        self._create_ai_tab()
-        self._create_blog_tab()
+    def _create_tab_buttons(self):
+        """Create custom tab buttons."""
+        self.tab_buttons = {}
+        
+        # GitHub tab button
+        github_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="GitHub",
+            command=lambda: self._show_tab("GitHub"),
+            width=120
+        )
+        github_btn.grid(row=0, column=0, padx=(5, 2), pady=5)
+        self.tab_buttons["GitHub"] = github_btn
+        
+        # AI Configuration tab button
+        ai_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="AI Configuration",
+            command=lambda: self._show_tab("AI Configuration"),
+            width=120
+        )
+        ai_btn.grid(row=0, column=1, padx=2, pady=5)
+        self.tab_buttons["AI Configuration"] = ai_btn
+        
+        # Blog Generation tab button
+        blog_btn = ctk.CTkButton(
+            self.tab_buttons_frame,
+            text="Blog Generation",
+            command=lambda: self._show_tab("Blog Generation"),
+            width=120
+        )
+        blog_btn.grid(row=0, column=2, padx=(2, 5), pady=5)
+        self.tab_buttons["Blog Generation"] = blog_btn
 
-    def _create_github_tab(self):
-        """Create GitHub integration tab."""
-        github_tab = self.tab_view.add("GitHub")
+    def _create_tab_contents(self):
+        """Create tab content areas."""
+        self.tab_contents = {}
+        
+        # GitHub tab content
+        self._create_github_content()
+        
+        # AI Configuration tab content
+        self._create_ai_content()
+        
+        # Blog Generation tab content
+        self._create_blog_content()
 
-        # GitHub tab content - eliminate all padding
-        github_content = ctk.CTkFrame(github_tab)
-        github_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+    def _create_github_content(self):
+        """Create GitHub tab content."""
+        github_content = ctk.CTkFrame(self.tab_content_frame)
         github_content.grid_columnconfigure(0, weight=1)
         github_content.grid_rowconfigure(1, weight=1)
+        self.tab_contents["GitHub"] = github_content
 
-        # GitHub controls - minimal padding
+        # GitHub controls
         github_controls = ctk.CTkFrame(github_content)
         github_controls.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
@@ -285,7 +342,7 @@ class MainWindow(ctk.CTk):
 
         # Main content area for GitHub tab
         self.github_main_area = ctk.CTkFrame(github_content)
-        self.github_main_area.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.github_main_area.grid(row=1, column=0, padx=5, pady=(0, 5), sticky="nsew")
         self.github_main_area.grid_columnconfigure(0, weight=1)
         self.github_main_area.grid_rowconfigure(0, weight=1)
 
@@ -298,15 +355,12 @@ class MainWindow(ctk.CTk):
         )
         placeholder_label.grid(row=0, column=0, padx=20, pady=20)
 
-    def _create_ai_tab(self):
-        """Create AI configuration tab."""
-        ai_tab = self.tab_view.add("AI Configuration")
-
-        # AI tab content - eliminate all padding
-        ai_content = ctk.CTkFrame(ai_tab)
-        ai_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+    def _create_ai_content(self):
+        """Create AI configuration tab content."""
+        ai_content = ctk.CTkFrame(self.tab_content_frame)
         ai_content.grid_columnconfigure(0, weight=1)
         ai_content.grid_rowconfigure(0, weight=1)
+        self.tab_contents["AI Configuration"] = ai_content
 
         # Create AI configuration panel
         self.ai_config = AIConfigurationPanel(ai_content, self.ai_manager, self.settings)
@@ -315,18 +369,34 @@ class MainWindow(ctk.CTk):
         # Set callback to update blog editor when AI config changes
         self.ai_config._on_provider_config_changed = self._on_ai_config_changed
 
-    def _create_blog_tab(self):
-        """Create blog generation tab."""
-        blog_tab = self.tab_view.add("Blog Generation")
-
-        # Blog tab content - eliminate all padding
-        self.blog_content = ctk.CTkFrame(blog_tab)
-        self.blog_content.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+    def _create_blog_content(self):
+        """Create blog generation tab content."""
+        self.blog_content = ctk.CTkFrame(self.tab_content_frame)
         self.blog_content.grid_columnconfigure(0, weight=1)
         self.blog_content.grid_rowconfigure(0, weight=1)
+        self.tab_contents["Blog Generation"] = self.blog_content
 
         # Initially show placeholder
         self._show_blog_placeholder()
+
+    def _show_tab(self, tab_name):
+        """Show the specified tab."""
+        # Hide all tab contents
+        for name, content in self.tab_contents.items():
+            content.grid_remove()
+        
+        # Update button states
+        for name, button in self.tab_buttons.items():
+            if name == tab_name:
+                button.configure(fg_color=("gray75", "gray25"))  # Active state
+            else:
+                button.configure(fg_color=("gray90", "gray13"))  # Inactive state
+        
+        # Show selected tab content
+        if tab_name in self.tab_contents:
+            self.tab_contents[tab_name].grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+        
+        self.current_tab = tab_name
 
     def _setup_bindings(self):
         """Setup event bindings."""
@@ -418,10 +488,21 @@ class MainWindow(ctk.CTk):
         # Ensure this runs on the main thread
         def update_ui():
             self.auth_in_progress = False  # Reset the flag
-            self._update_github_status(True)
-            self._initialize_github_client()
-            self._refresh_repositories()
-            # No success dialog - just populate repositories directly
+            
+            # Wait a moment for user data to be available, then update status
+            def check_and_update():
+                if self.github_auth.is_authenticated() and self.github_auth.get_user_info():
+                    self.logger.info("User data is available, updating GitHub status")
+                    self._update_github_status(True)
+                    self._initialize_github_client()
+                    self._refresh_repositories()
+                else:
+                    self.logger.info("User data not yet available, retrying in 500ms")
+                    # Retry after a short delay
+                    self.after(500, check_and_update)
+            
+            # Start checking for user data
+            check_and_update()
         
         # Schedule UI update on main thread
         self.after(0, update_ui)
