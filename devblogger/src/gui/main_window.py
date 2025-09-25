@@ -416,12 +416,7 @@ class MainWindow(ctk.CTk):
             self._update_github_status(True)
             self._initialize_github_client()
             self._refresh_repositories()
-
-            CTkMessagebox(
-                title="Login Successful",
-                message="Successfully authenticated with GitHub!",
-                icon="check"
-            )
+            # No success dialog - just populate repositories directly
         
         # Schedule UI update on main thread
         self.after(0, update_ui)
