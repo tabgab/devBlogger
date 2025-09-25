@@ -231,6 +231,31 @@ class GitHubAuth:
                     self.logger.info("Authorization code stored successfully")
                     CallbackHandler.auth_instance._log("✅ Authorization code stored successfully")
 
+                    # Immediately trigger token exchange
+                    self.logger.info("Triggering immediate token exchange...")
+                    CallbackHandler.auth_instance._log("🔄 Starting token exchange immediately...")
+
+                    # Trigger token exchange in a separate thread to avoid blocking
+                    import threading
+                    def exchange_token():
+                        try:
+                            success = CallbackHandler.auth_instance._exchange_code_for_token()
+                            if success:
+                                CallbackHandler.auth_instance._log("✅ Token exchange successful!")
+                                success = CallbackHandler.auth_instance._get_user_data()
+                                if success:
+                                    CallbackHandler.auth_instance._log("✅ User data retrieved successfully!")
+                                    CallbackHandler.auth_instance._log("🎉 Authentication completed successfully!")
+                                else:
+                                    CallbackHandler.auth_instance._log("❌ Failed to get user data")
+                            else:
+                                CallbackHandler.auth_instance._log("❌ Token exchange failed")
+                        except Exception as e:
+                            CallbackHandler.auth_instance.logger.error(f"Error in token exchange: {e}")
+                            CallbackHandler.auth_instance._log(f"❌ Error in token exchange: {e}")
+
+                    threading.Thread(target=exchange_token, daemon=True).start()
+
                     # Send success response
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
