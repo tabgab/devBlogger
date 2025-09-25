@@ -328,10 +328,9 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                 except:
                     pass
 
-            # Start monitoring thread
-            self.auth_thread = threading.Thread(target=self._monitor_authentication, daemon=True)
-            self.auth_thread.start()
-            self.logger.info("Authentication monitoring thread started")
+            # Use main thread monitoring to avoid autorelease pool crashes on macOS
+            self.logger.info("Starting main thread authentication monitoring")
+            self._start_main_thread_monitoring()
         except Exception as e:
             self.logger.error(f"Error in _start_authentication: {e}", exc_info=True)
             self._show_error(f"Failed to start authentication: {str(e)}")
@@ -663,6 +662,62 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             self.logger.error(f"Error closing dialog: {e}")
+
+    def _start_main_thread_monitoring(self):
+        """Start authentication monitoring on main thread using after()."""
+        self.monitoring_start_time = time.time()
+        self.max_wait_time = 300  # 5 minutes
+        self._monitor_auth_main_thread()
+
+    def _monitor_auth_main_thread(self):
+        """Monitor authentication on main thread to avoid threading issues."""
+        if not self.auth_in_progress:
+            return
+
+        elapsed = time.time() - self.monitoring_start_time
+        
+        # Check for timeout
+        if elapsed > self.max_wait_time:
+            self.logger.warning(f"Authentication timeout after {self.max_wait_time}s")
+            self._handle_auth_timeout()
+            return
+
+        try:
+            # Check multiple conditions for successful authentication
+            if self.github_auth.is_authenticated():
+                self.logger.info(f"Authentication successful after {elapsed:.1f}s!")
+                self._add_log_message("✅ Authentication successful!")
+                self._handle_auth_success()
+                return
+
+            # Check if we have both access token and user data
+            if self.github_auth.access_token and self.github_auth.user_data:
+                self.logger.info(f"Authentication completed with token and user data after {elapsed:.1f}s!")
+                self._add_log_message("✅ Authentication completed successfully!")
+                self._handle_auth_success()
+                return
+
+            # Check if we have access token
+            if self.github_auth.access_token:
+                self.logger.info(f"Access token received after {elapsed:.1f}s - authentication successful!")
+                self._add_log_message("✅ Access token received - authentication successful!")
+                self._handle_auth_success()
+                return
+
+            # Check if we have user data
+            if self.github_auth.user_data:
+                self.logger.info(f"User data received after {elapsed:.1f}s - authentication successful!")
+                self._add_log_message("✅ User data received - authentication successful!")
+                self._handle_auth_success()
+                return
+
+            # Schedule next check
+            self.after(500, self._monitor_auth_main_thread)  # Check every 500ms
+
+        except Exception as e:
+            self.logger.error(f"Error during authentication monitoring: {e}", exc_info=True)
+            self._add_log_message(f"❌ Authentication monitoring error: {str(e)}")
+            self._show_error(f"Authentication error: {str(e)}")
 
     def _on_closing(self):
         """Handle dialog closing event."""
