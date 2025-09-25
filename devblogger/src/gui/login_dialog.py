@@ -464,6 +464,18 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                     self.after(0, self._handle_auth_success)
                     return
 
+                # Check if we have access token (indicates token exchange completed)
+                if self.github_auth.access_token and not self.github_auth.user_data:
+                    self.logger.info(f"Access token received, waiting for user data... ({elapsed:.1f}s elapsed)")
+                    self._add_log_message("🔄 Access token received, getting user data...")
+
+                # Check if we have both access token and user data but is_authenticated() is failing
+                if self.github_auth.access_token and self.github_auth.user_data:
+                    self.logger.info(f"Both token and user data present after {elapsed:.1f}s - forcing success!")
+                    self._add_log_message("✅ Authentication completed with token and user data!")
+                    self.after(0, self._handle_auth_success)
+                    return
+
                 # Wait before checking again
                 time.sleep(0.5)  # Check more frequently
 
