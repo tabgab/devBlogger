@@ -46,7 +46,7 @@ class OllamaProvider(AIProvider):
         return bool(self.base_url and self.model)
 
     def test_connection(self) -> bool:
-        """Test connection to Ollama server."""
+        """Test connection to Ollama server and check if model exists."""
         if not self.is_configured():
             return False
 
@@ -55,7 +55,11 @@ class OllamaProvider(AIProvider):
             response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                return "models" in data
+                if "models" in data:
+                    # Check if the configured model exists
+                    available_models = [model["name"] for model in data.get("models", [])]
+                    return self.model in available_models
+                return False
             return False
         except Exception as e:
             self.logger.error(f"Ollama connection test failed: {e}")
@@ -140,6 +144,15 @@ class OllamaProvider(AIProvider):
     def get_available_models(self) -> List[str]:
         """Get list of available Ollama models."""
         try:
+            # Try synchronous approach first
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                models = [model["name"] for model in data.get("models", [])]
+                if models:
+                    return models
+            
+            # Fallback to async if sync fails
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 return [self.model]  # Return current model if in async context

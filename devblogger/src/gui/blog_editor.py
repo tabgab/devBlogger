@@ -371,14 +371,26 @@ Message: {commit.message}
 
     def _handle_generation_error(self, error_message: str):
         """Handle blog generation error."""
+        # Reset generation state first to prevent GUI freezing
+        self.generation_in_progress = False
+        self._update_ui_state()
+        
+        # Show user-friendly error message
+        if "model" in error_message.lower() and "not found" in error_message.lower():
+            user_message = "The selected AI model is not available. Please check your AI configuration and ensure the model is installed."
+        elif "connection" in error_message.lower() or "timeout" in error_message.lower():
+            user_message = "Could not connect to the AI service. Please check that the service is running and accessible."
+        else:
+            user_message = f"Failed to generate blog entry: {error_message}"
+        
         CTkMessagebox(
             title="Generation Error",
-            message=f"Failed to generate blog entry: {error_message}",
+            message=user_message,
             icon="cancel"
         )
 
         self.generation_info.configure(
-            text=f"Generation failed: {error_message}"
+            text=f"Generation failed: {error_message[:100]}{'...' if len(error_message) > 100 else ''}"
         )
 
     def _update_ui_state(self):
