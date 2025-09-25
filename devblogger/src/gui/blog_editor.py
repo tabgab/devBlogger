@@ -232,7 +232,12 @@ class BlogEditor(ctk.CTkFrame):
     def _on_provider_changed(self, provider_name: str):
         """Handle provider selection change."""
         self.selected_provider = provider_name
-        self.logger.info(f"Selected AI provider: {provider_name}")
+        # Update the AI manager's active provider
+        try:
+            self.ai_manager.set_active_provider(provider_name)
+            self.logger.info(f"Selected AI provider: {provider_name}")
+        except Exception as e:
+            self.logger.error(f"Error setting active provider: {e}")
 
     def _generate_blog_entry(self):
         """Generate blog entry from selected commits."""
@@ -274,15 +279,27 @@ class BlogEditor(ctk.CTkFrame):
                 # Prepare commit data for AI
                 commit_data = self._prepare_commit_data()
 
-                # Generate blog entry
-                response = self.ai_manager.generate_with_active(
-                    prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
-                    max_tokens=2000,
-                    temperature=0.7
-                )
-
-                # Update editor with generated content
-                self.after(0, lambda: self._handle_generation_success(response.text))
+                # Generate blog entry using asyncio
+                import asyncio
+                
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    response = loop.run_until_complete(
+                        self.ai_manager.generate_with_active(
+                            prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                            max_tokens=2000,
+                            temperature=0.7
+                        )
+                    )
+                    
+                    # Update editor with generated content
+                    self.after(0, lambda: self._handle_generation_success(response.text))
+                    
+                finally:
+                    loop.close()
 
             except Exception as e:
                 self.logger.error(f"Error generating blog entry: {e}")

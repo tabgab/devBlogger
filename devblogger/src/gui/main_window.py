@@ -311,6 +311,9 @@ class MainWindow(ctk.CTk):
         # Create AI configuration panel
         self.ai_config = AIConfigurationPanel(ai_content, self.ai_manager, self.settings)
         self.ai_config.grid(row=0, column=0, sticky="nsew")
+        
+        # Set callback to update blog editor when AI config changes
+        self.ai_config._on_provider_config_changed = self._on_ai_config_changed
 
     def _create_blog_tab(self):
         """Create blog generation tab."""
@@ -758,3 +761,12 @@ class MainWindow(ctk.CTk):
 
         # Destroy window
         self.destroy()
+
+    def _on_ai_config_changed(self):
+        """Handle AI configuration changes."""
+        # Update AI status
+        self._update_ai_status()
+        
+        # Refresh blog editor if it exists
+        if self.blog_editor:
+            self.blog_editor._load_initial_content()
