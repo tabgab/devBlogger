@@ -228,9 +228,9 @@ class MainWindow(ctk.CTk):
 
     def _create_tabbed_interface(self):
         """Create tabbed interface for main functionality."""
-        # Tab view
+        # Tab view - remove extra padding to use more space
         self.tab_view = ctk.CTkTabview(self.main_container)
-        self.tab_view.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.tab_view.grid(row=1, column=0, padx=5, pady=(5, 5), sticky="nsew")
         self.tab_view.grid_columnconfigure(0, weight=1)
         self.tab_view.grid_rowconfigure(0, weight=1)
 
@@ -344,7 +344,15 @@ class MainWindow(ctk.CTk):
         """Update GitHub connection status indicators."""
         if connected:
             user_info = self.github_auth.get_user_info()
-            username = user_info.get('login', 'Unknown')
+            self.logger.info(f"User info retrieved: {user_info}")
+            
+            # Try multiple possible username fields
+            username = (user_info.get('login') or 
+                       user_info.get('name') or 
+                       user_info.get('email', '').split('@')[0] if user_info.get('email') else None or
+                       'Unknown')
+            
+            self.logger.info(f"Extracted username: {username}")
             self.github_status_label.configure(text=f"GitHub: {username}")
             self.github_status_indicator.configure(text="✓", text_color="green")
             self.login_button.configure(text="Scan Available Repos", fg_color="green", hover_color="darkgreen")

@@ -46,54 +46,54 @@ class BlogEditor(ctk.CTkFrame):
 
     def _setup_ui(self):
         """Setup user interface."""
-        # Configure grid
+        # Configure grid for better space utilization
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # Header
+        # Header - make it more compact
         header_frame = ctk.CTkFrame(self)
-        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        header_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         header_frame.grid_columnconfigure(1, weight=1)
 
         # Title
         title_label = ctk.CTkLabel(
             header_frame,
             text="Blog Entry Generation",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        title_label.grid(row=0, column=0, padx=(0, 20))
+        title_label.grid(row=0, column=0, padx=(10, 20))
 
         # Commit count
         self.commit_count_label = ctk.CTkLabel(
             header_frame,
             text=f"{len(self.commits)} commits selected",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.commit_count_label.grid(row=0, column=1)
+        self.commit_count_label.grid(row=0, column=1, padx=(0, 10))
 
-        # Main content
+        # Main content with horizontal layout - remove extra padding
         content_frame = ctk.CTkFrame(self)
-        content_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
-        content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_rowconfigure(1, weight=1)
+        content_frame.grid(row=1, column=0, padx=5, pady=(0, 5), sticky="nsew")
+        content_frame.grid_columnconfigure(1, weight=1)  # Editor column gets more space
+        content_frame.grid_rowconfigure(0, weight=1)
 
-        # Controls
+        # Controls on the left
         self._create_controls(content_frame)
 
-        # Editor area
+        # Editor area on the right (takes most space)
         self._create_editor_area(content_frame)
 
     def _create_controls(self, parent):
         """Create control widgets."""
-        # Controls frame
+        # Controls frame on the left side
         controls_frame = ctk.CTkFrame(parent)
-        controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        controls_frame.grid_columnconfigure(1, weight=1)
+        controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        controls_frame.grid_columnconfigure(0, weight=1)
 
         # AI Provider selection
         provider_label = ctk.CTkLabel(controls_frame, text="AI Provider:")
-        provider_label.grid(row=0, column=0, padx=(0, 10))
+        provider_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
         self.provider_var = ctk.StringVar()
         self.provider_dropdown = ctk.CTkOptionMenu(
@@ -101,21 +101,21 @@ class BlogEditor(ctk.CTkFrame):
             variable=self.provider_var,
             values=["Loading..."],
             command=self._on_provider_changed,
-            width=150
+            width=200
         )
-        self.provider_dropdown.grid(row=0, column=1, padx=(0, 10))
+        self.provider_dropdown.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
 
         # Prompt configuration
         prompt_label = ctk.CTkLabel(controls_frame, text="Prompt:")
-        prompt_label.grid(row=0, column=2, padx=(0, 10))
+        prompt_label.grid(row=2, column=0, padx=10, pady=(10, 5), sticky="w")
 
         self.prompt_text = ctk.CTkTextbox(
             controls_frame,
-            height=60,
+            height=120,
             wrap="word",
             font=ctk.CTkFont(size=11)
         )
-        self.prompt_text.grid(row=0, column=3, padx=(0, 10), sticky="ew")
+        self.prompt_text.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
 
         # Load default prompt
         default_prompt = self.settings.get_default_prompt()
@@ -124,7 +124,8 @@ class BlogEditor(ctk.CTkFrame):
 
         # Control buttons
         buttons_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
-        buttons_frame.grid(row=1, column=0, columnspan=4, pady=(10, 0))
+        buttons_frame.grid(row=4, column=0, padx=10, pady=(10, 10), sticky="ew")
+        buttons_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         # Generate button
         self.generate_button = ctk.CTkButton(
@@ -135,7 +136,7 @@ class BlogEditor(ctk.CTkFrame):
             hover_color="darkgreen",
             height=40
         )
-        self.generate_button.grid(row=0, column=0, padx=(0, 10))
+        self.generate_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
 
         # Save button
         self.save_button = ctk.CTkButton(
@@ -147,7 +148,7 @@ class BlogEditor(ctk.CTkFrame):
             height=40,
             state="disabled"
         )
-        self.save_button.grid(row=0, column=1, padx=(0, 10))
+        self.save_button.grid(row=1, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
 
         # Reset button
         self.reset_button = ctk.CTkButton(
@@ -158,19 +159,20 @@ class BlogEditor(ctk.CTkFrame):
             hover_color="darkorange",
             height=40
         )
-        self.reset_button.grid(row=0, column=2)
+        self.reset_button.grid(row=2, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
 
     def _create_editor_area(self, parent):
         """Create blog editor area."""
-        # Editor frame
+        # Editor frame on the right side (takes most space)
         editor_frame = ctk.CTkFrame(parent)
-        editor_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        editor_frame.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="nsew")
         editor_frame.grid_columnconfigure(0, weight=1)
-        editor_frame.grid_rowconfigure(0, weight=1)
+        editor_frame.grid_rowconfigure(1, weight=1)
 
         # Editor header
         editor_header = ctk.CTkFrame(editor_frame)
         editor_header.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        editor_header.grid_columnconfigure(1, weight=1)
 
         editor_title = ctk.CTkLabel(
             editor_header,
@@ -186,7 +188,7 @@ class BlogEditor(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.generation_info.grid(row=0, column=1, padx=(20, 0))
+        self.generation_info.grid(row=0, column=1, padx=(20, 0), sticky="e")
 
         # Text editor
         editor_container = ctk.CTkFrame(editor_frame)
