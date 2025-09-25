@@ -53,6 +53,8 @@ class GitHubAuth:
         # Server for handling callback
         self.callback_server = None
         self.server_thread = None
+        self.log_callback = None
+        self.token_exchange_in_progress = False
 
     def is_configured(self) -> bool:
         """Check if GitHub OAuth is properly configured."""
@@ -195,66 +197,81 @@ class GitHubAuth:
 
             class CallbackHandler(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
-                    self.logger.info(f"Callback received: {self.path}")
+                    # Use the auth instance logger instead of self.logger
+                    CallbackHandler.auth_instance.logger.info(f"Callback received: {self.path}")
                     CallbackHandler.auth_instance._log(f"📨 Callback received: {self.path}")
 
                     # Parse query parameters
                     parsed_url = urlparse(self.path)
                     query_params = parse_qs(parsed_url.query)
-                    self.logger.info(f"Query parameters: {query_params}")
+                    CallbackHandler.auth_instance.logger.info(f"Query parameters: {query_params}")
 
                     # Verify state parameter
                     returned_state = query_params.get('state', [''])[0]
                     expected_state = CallbackHandler.auth_instance.state
-                    self.logger.info(f"Received state: {returned_state}")
-                    self.logger.info(f"Expected state: {expected_state}")
+                    CallbackHandler.auth_instance.logger.info(f"Received state: {returned_state}")
+                    CallbackHandler.auth_instance.logger.info(f"Expected state: {expected_state}")
 
                     if returned_state != expected_state:
-                        self.logger.error(f"State mismatch! Received: {returned_state}, Expected: {expected_state}")
+                        CallbackHandler.auth_instance.logger.error(f"State mismatch! Received: {returned_state}, Expected: {expected_state}")
                         CallbackHandler.auth_instance._log(f"❌ State mismatch! Received: {returned_state}, Expected: {expected_state}")
                         self.send_error(400, "Invalid state parameter")
                         return
 
                     # Get authorization code
                     self.auth_code = query_params.get('code', [''])[0]
-                    self.logger.info(f"Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "No authorization code received")
+                    CallbackHandler.auth_instance.logger.info(f"Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "No authorization code received")
                     CallbackHandler.auth_instance._log(f"🔑 Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "❌ No authorization code received")
 
                     if not self.auth_code:
-                        self.logger.error("No authorization code in callback")
+                        CallbackHandler.auth_instance.logger.error("No authorization code in callback")
                         CallbackHandler.auth_instance._log("❌ No authorization code in callback")
                         self.send_error(400, "No authorization code received")
                         return
 
                     # Store the authorization code in the auth instance
                     CallbackHandler.auth_instance.auth_code = self.auth_code
-                    self.logger.info("Authorization code stored successfully")
+                    CallbackHandler.auth_instance.logger.info("Authorization code stored successfully")
                     CallbackHandler.auth_instance._log("✅ Authorization code stored successfully")
 
-                    # Immediately trigger token exchange
-                    self.logger.info("Triggering immediate token exchange...")
-                    CallbackHandler.auth_instance._log("🔄 Starting token exchange immediately...")
+                    # Check if token exchange is already in progress or completed
+                    if CallbackHandler.auth_instance.token_exchange_in_progress:
+                        CallbackHandler.auth_instance.logger.info("Token exchange already in progress, skipping")
+                        CallbackHandler.auth_instance._log("⚠️ Token exchange already in progress, skipping")
+                    elif CallbackHandler.auth_instance.access_token:
+                        CallbackHandler.auth_instance.logger.info("Already have access token, skipping token exchange")
+                        CallbackHandler.auth_instance._log("✅ Already authenticated, skipping token exchange")
+                    else:
+                        # Mark token exchange as in progress
+                        CallbackHandler.auth_instance.token_exchange_in_progress = True
+                        
+                        # Immediately trigger token exchange
+                        CallbackHandler.auth_instance.logger.info("Triggering immediate token exchange...")
+                        CallbackHandler.auth_instance._log("🔄 Starting token exchange immediately...")
 
-                    # Trigger token exchange in a separate thread to avoid blocking
-                    import threading
-                    def exchange_token():
-                        try:
-                            success = CallbackHandler.auth_instance._exchange_code_for_token()
-                            if success:
-                                CallbackHandler.auth_instance._log("✅ Token exchange successful!")
-                                success = CallbackHandler.auth_instance._get_user_data()
+                        # Trigger token exchange in a separate thread to avoid blocking
+                        import threading
+                        def exchange_token():
+                            try:
+                                success = CallbackHandler.auth_instance._exchange_code_for_token()
                                 if success:
-                                    CallbackHandler.auth_instance._log("✅ User data retrieved successfully!")
-                                    CallbackHandler.auth_instance._log("🎉 Authentication completed successfully!")
+                                    CallbackHandler.auth_instance._log("✅ Token exchange successful!")
+                                    success = CallbackHandler.auth_instance._get_user_data()
+                                    if success:
+                                        CallbackHandler.auth_instance._log("✅ User data retrieved successfully!")
+                                        CallbackHandler.auth_instance._log("🎉 Authentication completed successfully!")
+                                    else:
+                                        CallbackHandler.auth_instance._log("❌ Failed to get user data")
                                 else:
-                                    CallbackHandler.auth_instance._log("❌ Failed to get user data")
-                            else:
-                                CallbackHandler.auth_instance._log("❌ Token exchange failed")
-                        except Exception as e:
-                            CallbackHandler.auth_instance.logger.error(f"Error in token exchange: {e}")
-                            CallbackHandler.auth_instance._log(f"❌ Error in token exchange: {e}")
+                                    CallbackHandler.auth_instance._log("❌ Token exchange failed")
+                            except Exception as e:
+                                CallbackHandler.auth_instance.logger.error(f"Error in token exchange: {e}")
+                                CallbackHandler.auth_instance._log(f"❌ Error in token exchange: {e}")
+                            finally:
+                                # Reset the flag when done
+                                CallbackHandler.auth_instance.token_exchange_in_progress = False
 
-                    threading.Thread(target=exchange_token, daemon=True).start()
+                        threading.Thread(target=exchange_token, daemon=True).start()
 
                     # Send success response
                     self.send_response(200)
@@ -280,7 +297,7 @@ class GitHubAuth:
                     '''
 
                     self.wfile.write(response_html.encode())
-                    self.logger.info("Success response sent to browser")
+                    CallbackHandler.auth_instance.logger.info("Success response sent to browser")
                     CallbackHandler.auth_instance._log("🌐 Success response sent to browser")
 
                 def log_message(self, format, *args):
