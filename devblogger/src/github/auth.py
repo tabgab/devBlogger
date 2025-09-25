@@ -503,25 +503,9 @@ class GitHubAuth:
         """Stop the callback server."""
         if self.callback_server:
             try:
-                # Stop the server in a thread-safe way
-                import threading
-                
-                def shutdown_server():
-                    try:
-                        if self.callback_server:
-                            self.callback_server.shutdown()
-                            self.callback_server.server_close()
-                    except Exception as e:
-                        self.logger.error(f"Error in server shutdown: {e}")
-                
-                # Run shutdown in a separate thread to avoid blocking
-                shutdown_thread = threading.Thread(target=shutdown_server, daemon=True)
-                shutdown_thread.start()
-                
-                # Give it a moment to shutdown gracefully
-                shutdown_thread.join(timeout=1.0)
-                
-                # Clean up references
+                # On macOS, server shutdown causes autorelease pool crashes
+                # Just mark as None and let the daemon thread clean up naturally
+                self.logger.info("Marking callback server for cleanup (avoiding macOS crash)")
                 self.callback_server = None
                 self.server_thread = None
                 
