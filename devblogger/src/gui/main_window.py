@@ -410,16 +410,21 @@ class MainWindow(ctk.CTk):
 
     def _on_login_success(self):
         """Handle successful GitHub login."""
-        self.auth_in_progress = False  # Reset the flag
-        self._update_github_status(True)
-        self._initialize_github_client()
-        self._refresh_repositories()
+        # Ensure this runs on the main thread
+        def update_ui():
+            self.auth_in_progress = False  # Reset the flag
+            self._update_github_status(True)
+            self._initialize_github_client()
+            self._refresh_repositories()
 
-        CTkMessagebox(
-            title="Login Successful",
-            message="Successfully authenticated with GitHub!",
-            icon="check"
-        )
+            CTkMessagebox(
+                title="Login Successful",
+                message="Successfully authenticated with GitHub!",
+                icon="check"
+            )
+        
+        # Schedule UI update on main thread
+        self.after(0, update_ui)
 
     def _initialize_github_client(self):
         """Initialize GitHub API client."""
