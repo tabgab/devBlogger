@@ -112,32 +112,62 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         instructions_label.pack(pady=(0, 20))
 
-        # Authorization URL display - make it prominent
-        self.url_frame = ctk.CTkFrame(main_frame, border_width=2, fg_color="lightblue")
-        self.url_frame.pack(fill="x", pady=(0, 20))
+        # WebView for GitHub authentication
+        self.webview_frame = ctk.CTkFrame(main_frame, border_width=2, fg_color="lightgray")
+        self.webview_frame.pack(fill="both", expand=True, pady=(0, 20))
 
-        url_label = ctk.CTkLabel(
-            self.url_frame,
-            text="🔗 GitHub Authorization URL:",
+        webview_label = ctk.CTkLabel(
+            self.webview_frame,
+            text="🌐 GitHub Authentication (opens automatically)",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        url_label.pack(anchor="w", padx=10, pady=(10, 5))
+        webview_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.auth_url_text = ctk.CTkTextbox(
-            self.url_frame,
-            height=80,
+        # Status text for webview
+        self.webview_status = ctk.CTkLabel(
+            self.webview_frame,
+            text="Loading GitHub authentication...",
             font=ctk.CTkFont(size=11),
+            text_color="blue"
+        )
+        self.webview_status.pack(anchor="w", padx=10, pady=(0, 10))
+
+        # Placeholder for webview - will be replaced with actual webview
+        self.webview_placeholder = ctk.CTkLabel(
+            self.webview_frame,
+            text="🔄 Opening GitHub authentication in embedded browser...\n\n"
+                 "If this doesn't load, please use the manual method below.",
+            font=ctk.CTkFont(size=12),
+            justify="center"
+        )
+        self.webview_placeholder.pack(expand=True, padx=20, pady=20)
+
+        # Manual authentication section (fallback)
+        self.manual_frame = ctk.CTkFrame(main_frame, border_width=2, fg_color="lightyellow")
+        self.manual_frame.pack(fill="x", pady=(0, 20))
+
+        manual_label = ctk.CTkLabel(
+            self.manual_frame,
+            text="🔗 Manual Authentication (if webview fails):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        manual_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.manual_url_text = ctk.CTkTextbox(
+            self.manual_frame,
+            height=60,
+            font=ctk.CTkFont(size=10),
             wrap="word"
         )
-        self.auth_url_text.pack(fill="x", padx=10, pady=(0, 10))
-        self.auth_url_text.insert("1.0", "⏳ Generating authorization URL...")
-        self.auth_url_text.configure(state="disabled")
+        self.manual_url_text.pack(fill="x", padx=10, pady=(0, 10))
+        self.manual_url_text.insert("1.0", "⏳ Generating authorization URL...")
+        self.manual_url_text.configure(state="disabled")
 
-        # Copy URL button
+        # Copy URL button for manual method
         copy_button = ctk.CTkButton(
-            self.url_frame,
+            self.manual_frame,
             text="📋 Copy URL",
-            command=self._copy_url,
+            command=self._copy_manual_url,
             width=100
         )
         copy_button.pack(anchor="e", padx=10, pady=(0, 10))
@@ -332,6 +362,33 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                 )
         except Exception as e:
             self.logger.error(f"Error copying URL: {e}")
+            CTkMessagebox(
+                title="Copy Error",
+                message=f"Failed to copy URL: {str(e)}",
+                icon="cancel"
+            )
+
+    def _copy_manual_url(self):
+        """Copy the manual authorization URL to clipboard."""
+        try:
+            auth_url = self.manual_url_text.get("1.0", "end").strip()
+            if auth_url and auth_url != "⏳ Generating authorization URL...":
+                self.clipboard_clear()
+                self.clipboard_append(auth_url)
+                self._add_log_message("📋 Manual authorization URL copied to clipboard")
+                CTkMessagebox(
+                    title="URL Copied",
+                    message="Manual authorization URL has been copied to your clipboard.",
+                    icon="info"
+                )
+            else:
+                CTkMessagebox(
+                    title="No URL Available",
+                    message="Authorization URL is not yet available.",
+                    icon="warning"
+                )
+        except Exception as e:
+            self.logger.error(f"Error copying manual URL: {e}")
             CTkMessagebox(
                 title="Copy Error",
                 message=f"Failed to copy URL: {str(e)}",

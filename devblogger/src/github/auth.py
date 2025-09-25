@@ -99,12 +99,22 @@ class GitHubAuth:
             self._log(f"🔗 Authorization URL generated: {auth_url}")
 
             # Display URL in dialog if available
-            if parent_window and ctk and hasattr(parent_window, 'auth_url_text'):
+            if parent_window and ctk:
                 try:
-                    parent_window.auth_url_text.configure(state="normal")
-                    parent_window.auth_url_text.delete("1.0", "end")
-                    parent_window.auth_url_text.insert("1.0", auth_url)
-                    parent_window.auth_url_text.configure(state="disabled")
+                    # Try to display in main URL text area
+                    if hasattr(parent_window, 'auth_url_text'):
+                        parent_window.auth_url_text.configure(state="normal")
+                        parent_window.auth_url_text.delete("1.0", "end")
+                        parent_window.auth_url_text.insert("1.0", auth_url)
+                        parent_window.auth_url_text.configure(state="disabled")
+
+                    # Also try to display in manual URL text area
+                    if hasattr(parent_window, 'manual_url_text'):
+                        parent_window.manual_url_text.configure(state="normal")
+                        parent_window.manual_url_text.delete("1.0", "end")
+                        parent_window.manual_url_text.insert("1.0", auth_url)
+                        parent_window.manual_url_text.configure(state="disabled")
+
                     self._log("📋 Authorization URL displayed in dialog")
                     self._log("🔗 URL is ready to copy or open in browser")
                     self._log(f"🌐 Authorization URL: {auth_url}")
