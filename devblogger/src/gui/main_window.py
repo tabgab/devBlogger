@@ -100,6 +100,11 @@ class MainWindow(ctk.CTk):
         self._check_auth_status()
         self.logger.info("Authentication status check completed")
 
+        # Update AI status
+        self.logger.info("Updating AI status")
+        self._update_ai_status()
+        self.logger.info("AI status update completed")
+
     def _setup_window(self):
         """Setup main window properties."""
         # Get window size from settings
@@ -303,14 +308,9 @@ class MainWindow(ctk.CTk):
         ai_content.grid_columnconfigure(0, weight=1)
         ai_content.grid_rowconfigure(0, weight=1)
 
-        # Placeholder for AI configuration panel
-        placeholder_label = ctk.CTkLabel(
-            ai_content,
-            text="AI Configuration Panel\nConfigure your AI providers here",
-            font=ctk.CTkFont(size=14, slant="italic"),
-            text_color="gray"
-        )
-        placeholder_label.grid(row=0, column=0, padx=20, pady=20)
+        # Create AI configuration panel
+        self.ai_config = AIConfigurationPanel(ai_content, self.ai_manager, self.settings)
+        self.ai_config.grid(row=0, column=0, sticky="nsew")
 
     def _create_blog_tab(self):
         """Create blog generation tab."""
