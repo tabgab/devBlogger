@@ -225,6 +225,17 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         self.authenticate_button.pack(side="left", padx=(0, 10))
 
+        # Manual check button
+        self.check_button = ctk.CTkButton(
+            button_frame,
+            text="Check Authentication Status",
+            command=self._check_auth_status,
+            fg_color="blue",
+            hover_color="darkblue",
+            height=40
+        )
+        self.check_button.pack(side="left", padx=(0, 10))
+
         self.cancel_button = ctk.CTkButton(
             button_frame,
             text="Cancel",
@@ -417,6 +428,75 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             CTkMessagebox(
                 title="Copy Error",
                 message=f"Failed to copy URL: {str(e)}",
+                icon="cancel"
+            )
+
+    def _check_auth_status(self):
+        """Manually check authentication status."""
+        try:
+            self._add_log_message("🔍 Manually checking authentication status...")
+
+            # Check if we have an auth code (callback was received)
+            if self.github_auth.auth_code:
+                self._add_log_message(f"✅ Authorization code found: {self.github_auth.auth_code[:10]}...")
+                self._add_log_message("🔄 Processing authorization code...")
+
+                # Try to exchange code for token
+                success = self.github_auth._exchange_code_for_token()
+                if success:
+                    self._add_log_message("✅ Token exchange successful!")
+                    success = self.github_auth._get_user_data()
+                    if success:
+                        self._add_log_message("✅ User data retrieved successfully!")
+                        self._add_log_message("🎉 Authentication completed successfully!")
+                        self._handle_auth_success()
+                        return
+                    else:
+                        self._add_log_message("❌ Failed to get user data")
+                else:
+                    self._add_log_message("❌ Token exchange failed")
+
+            # Check if we have access token
+            if self.github_auth.access_token:
+                self._add_log_message(f"✅ Access token found: {self.github_auth.access_token[:20]}...")
+                if not self.github_auth.user_data:
+                    self._add_log_message("🔄 Getting user data...")
+                    success = self.github_auth._get_user_data()
+                    if success:
+                        self._add_log_message("✅ User data retrieved successfully!")
+                        self._add_log_message("🎉 Authentication completed successfully!")
+                        self._handle_auth_success()
+                        return
+                    else:
+                        self._add_log_message("❌ Failed to get user data")
+
+            # Check if we have user data
+            if self.github_auth.user_data:
+                self._add_log_message("✅ User data found - authentication successful!")
+                self._handle_auth_success()
+                return
+
+            # Check if fully authenticated
+            if self.github_auth.is_authenticated():
+                self._add_log_message("✅ Authentication is complete!")
+                self._handle_auth_success()
+                return
+
+            # No authentication found
+            self._add_log_message("❌ No authentication data found")
+            self._add_log_message("🔗 Please complete the GitHub authorization in your browser first")
+            CTkMessagebox(
+                title="No Authentication Found",
+                message="No authentication data found. Please complete the GitHub authorization in your browser first, then click this button again.",
+                icon="warning"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error checking auth status: {e}")
+            self._add_log_message(f"❌ Error checking authentication status: {str(e)}")
+            CTkMessagebox(
+                title="Check Error",
+                message=f"Error checking authentication status: {str(e)}",
                 icon="cancel"
             )
 
