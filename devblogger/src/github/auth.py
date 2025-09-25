@@ -174,8 +174,11 @@ class GitHubAuth:
     def _start_callback_server(self):
         """Start local HTTP server to handle OAuth callback."""
         try:
-            # Find available port
-            port = self._find_available_port(8080)
+            # Use the port from redirect_uri instead of finding an available one
+            from urllib.parse import urlparse
+            parsed_uri = urlparse(self.redirect_uri)
+            port = parsed_uri.port or 8080
+            self.logger.info(f"Using redirect URI port: {port}")
 
             class CallbackHandler(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
