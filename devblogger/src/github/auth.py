@@ -109,7 +109,7 @@ class GitHubAuth:
                         parent_window.manual_url_text.configure(state="disabled")
                         self._log("📋 Authorization URL displayed in manual section")
                     else:
-                        self._log("⚠️ No URL display area found in dialog")
+                        self._log("⚠️ No URL display area found in dialog - URL will be shown in logs only")
 
                     self._log("🔗 URL is ready to copy or open in browser")
                     self._log(f"🌐 Authorization URL: {auth_url}")
@@ -117,6 +117,9 @@ class GitHubAuth:
                     self.logger.error(f"Error displaying URL in dialog: {e}")
                     self._log(f"⚠️ Error displaying URL: {e}")
                     self._log(f"🔗 Manual URL: {auth_url}")
+
+            # Always log the URL for manual access
+            self._log(f"🔗 Manual URL: {auth_url}")
 
             if parent_window and ctk:
                 # Show progress dialog
