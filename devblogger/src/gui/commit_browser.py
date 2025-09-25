@@ -443,14 +443,26 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _on_commit_selected(self, selection):
         """Handle commit selection in listbox."""
-        if not selection or not self.filtered_commits:
+        if selection is None or not self.filtered_commits:
             return
 
-        # Get selected commit
-        selected_index = self.commit_listbox.curselection()
-        if selected_index:
-            commit = self.filtered_commits[selected_index[0]]
-            self._update_preview(commit)
+        try:
+            # CTkListbox passes the selected value directly, not an index
+            # We need to find the index based on the selection
+            if isinstance(selection, str):
+                # Find the commit by matching the display text
+                for i, commit in enumerate(self.filtered_commits):
+                    display_text = self._format_commit_display(commit)
+                    if display_text == selection:
+                        self._update_preview(commit)
+                        return
+            elif isinstance(selection, int):
+                # Direct index
+                if 0 <= selection < len(self.filtered_commits):
+                    commit = self.filtered_commits[selection]
+                    self._update_preview(commit)
+        except Exception as e:
+            self.logger.error(f"Error handling commit selection: {e}")
 
     def _update_preview(self, commit: GitHubCommit):
         """Update commit preview pane."""
