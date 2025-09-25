@@ -522,9 +522,17 @@ class MainWindow(ctk.CTk):
         self.selected_commits = commits
         self.logger.info(f"Selected {len(commits)} commits for blog generation")
         
-        # Initialize blog editor if commits are selected
+        # Update blog tab status
+        self._update_blog_tab_status()
+        
+        # Initialize blog editor if commits are selected and AI is configured
         if commits and self.current_repo:
-            self._initialize_blog_editor()
+            working_providers = self.ai_manager.get_working_providers()
+            if working_providers:
+                self._initialize_blog_editor()
+            else:
+                # Show updated placeholder with current status
+                self._show_blog_placeholder()
 
     def _show_blog_placeholder(self):
         """Show placeholder in blog generation tab."""
@@ -532,14 +540,82 @@ class MainWindow(ctk.CTk):
         for widget in self.blog_content.winfo_children():
             widget.destroy()
             
-        # Show placeholder
-        placeholder_label = ctk.CTkLabel(
-            self.blog_content,
-            text="Select commits from the GitHub tab to generate blog entries",
-            font=ctk.CTkFont(size=14, slant="italic"),
-            text_color="gray"
+        # Create informative placeholder with status
+        placeholder_frame = ctk.CTkFrame(self.blog_content)
+        placeholder_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            placeholder_frame,
+            text="Blog Entry Generation",
+            font=ctk.CTkFont(size=18, weight="bold")
         )
-        placeholder_label.grid(row=0, column=0, padx=20, pady=20)
+        title_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        
+        # Requirements checklist
+        requirements_label = ctk.CTkLabel(
+            placeholder_frame,
+            text="Requirements to generate blog entries:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        requirements_label.grid(row=1, column=0, padx=20, pady=(10, 5))
+        
+        # Check commits status
+        commits_status = "✓" if self.selected_commits else "✗"
+        commits_color = "green" if self.selected_commits else "red"
+        commits_text = f"{commits_status} Commits selected: {len(self.selected_commits) if self.selected_commits else 0}"
+        
+        commits_label = ctk.CTkLabel(
+            placeholder_frame,
+            text=commits_text,
+            font=ctk.CTkFont(size=12),
+            text_color=commits_color
+        )
+        commits_label.grid(row=2, column=0, padx=20, pady=2, sticky="w")
+        
+        # Check AI provider status
+        working_providers = self.ai_manager.get_working_providers()
+        configured_providers = self.ai_manager.get_configured_providers()
+        
+        if working_providers:
+            ai_status = "✓"
+            ai_color = "green"
+            ai_text = f"✓ AI Provider configured: {working_providers[0]}"
+        elif configured_providers:
+            ai_status = "⚠"
+            ai_color = "orange"
+            ai_text = f"⚠ AI Provider configured but not working: {configured_providers[0]}"
+        else:
+            ai_status = "✗"
+            ai_color = "red"
+            ai_text = "✗ No AI Provider configured"
+        
+        ai_label = ctk.CTkLabel(
+            placeholder_frame,
+            text=ai_text,
+            font=ctk.CTkFont(size=12),
+            text_color=ai_color
+        )
+        ai_label.grid(row=3, column=0, padx=20, pady=2, sticky="w")
+        
+        # Instructions
+        if not self.selected_commits:
+            instruction_text = "1. Go to the GitHub tab\n2. Login and select a repository\n3. Select commits to generate blog entries from"
+        elif not working_providers and not configured_providers:
+            instruction_text = "1. Go to the AI Configuration tab\n2. Configure at least one AI provider\n3. Return here to generate blog entries"
+        elif configured_providers and not working_providers:
+            instruction_text = "1. Go to the AI Configuration tab\n2. Check your AI provider configuration\n3. Test the connection to ensure it's working"
+        else:
+            instruction_text = "All requirements met! The blog editor should appear automatically."
+        
+        instructions_label = ctk.CTkLabel(
+            placeholder_frame,
+            text=f"\nNext steps:\n{instruction_text}",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+            justify="left"
+        )
+        instructions_label.grid(row=4, column=0, padx=20, pady=(10, 20), sticky="w")
 
     def _initialize_blog_editor(self):
         """Initialize blog editor with selected commits."""
@@ -762,15 +838,26 @@ class MainWindow(ctk.CTk):
         # Destroy window
         self.destroy()
 
+    def _update_blog_tab_status(self):
+        """Update blog tab status and content based on current state."""
+        # Check if both requirements are met
+        working_providers = self.ai_manager.get_working_providers()
+        
+        if self.selected_commits and self.current_repo and working_providers:
+            # All requirements met - initialize blog editor
+            self._initialize_blog_editor()
+        else:
+            # Show updated placeholder with current status
+            self._show_blog_placeholder()
+
     def _on_ai_config_changed(self):
         """Handle AI configuration changes."""
         # Update AI status
         self._update_ai_status()
         
+        # Update blog tab status
+        self._update_blog_tab_status()
+        
         # Refresh blog editor if it exists
         if self.blog_editor:
             self.blog_editor._load_initial_content()
-            
-        # Also call the callback if it exists on the AI config panel
-        if hasattr(self.ai_config, '_on_provider_config_changed') and callable(self.ai_config._on_provider_config_changed):
-            self.ai_config._on_provider_config_changed()
