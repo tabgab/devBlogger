@@ -317,19 +317,13 @@ class MainWindow(ctk.CTk):
         blog_tab = self.tab_view.add("Blog Generation")
 
         # Blog tab content
-        blog_content = ctk.CTkFrame(blog_tab)
-        blog_content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-        blog_content.grid_columnconfigure(0, weight=1)
-        blog_content.grid_rowconfigure(0, weight=1)
+        self.blog_content = ctk.CTkFrame(blog_tab)
+        self.blog_content.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.blog_content.grid_columnconfigure(0, weight=1)
+        self.blog_content.grid_rowconfigure(0, weight=1)
 
-        # Placeholder for blog generation interface
-        placeholder_label = ctk.CTkLabel(
-            blog_content,
-            text="Blog Generation Interface\nGenerate and edit blog entries here",
-            font=ctk.CTkFont(size=14, slant="italic"),
-            text_color="gray"
-        )
-        placeholder_label.grid(row=0, column=0, padx=20, pady=20)
+        # Initially show placeholder
+        self._show_blog_placeholder()
 
     def _setup_bindings(self):
         """Setup event bindings."""
@@ -524,6 +518,44 @@ class MainWindow(ctk.CTk):
         """Handle commit selection for blog generation."""
         self.selected_commits = commits
         self.logger.info(f"Selected {len(commits)} commits for blog generation")
+        
+        # Initialize blog editor if commits are selected
+        if commits and self.current_repo:
+            self._initialize_blog_editor()
+
+    def _show_blog_placeholder(self):
+        """Show placeholder in blog generation tab."""
+        # Clear existing content
+        for widget in self.blog_content.winfo_children():
+            widget.destroy()
+            
+        # Show placeholder
+        placeholder_label = ctk.CTkLabel(
+            self.blog_content,
+            text="Select commits from the GitHub tab to generate blog entries",
+            font=ctk.CTkFont(size=14, slant="italic"),
+            text_color="gray"
+        )
+        placeholder_label.grid(row=0, column=0, padx=20, pady=20)
+
+    def _initialize_blog_editor(self):
+        """Initialize blog editor with selected commits."""
+        if not self.selected_commits or not self.current_repo:
+            return
+            
+        # Clear existing content
+        for widget in self.blog_content.winfo_children():
+            widget.destroy()
+            
+        # Create blog editor
+        self.blog_editor = BlogEditor(
+            self.blog_content,
+            self.ai_manager,
+            self.settings,
+            self.selected_commits,
+            self.current_repo
+        )
+        self.blog_editor.grid(row=0, column=0, sticky="nsew")
 
     def _show_settings(self):
         """Show application settings."""
