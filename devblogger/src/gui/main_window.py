@@ -417,6 +417,10 @@ class MainWindow(ctk.CTk):
         self.auth_in_progress = False  # Reset the flag
         self.logger.info("Login dialog closed, resetting auth_in_progress flag")
 
+    def _create_login_dialog(self):
+        """Create and return a login dialog."""
+        return GitHubLoginDialog(self, self.github_auth, self._on_login_success)
+
     def _initialize_github_client(self):
         """Initialize GitHub API client."""
         try:

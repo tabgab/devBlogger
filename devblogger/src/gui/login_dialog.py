@@ -202,6 +202,9 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             self._add_log_message("🔄 Starting authentication process...")
             self.logger.info("Authentication state updated, starting monitoring thread")
 
+            # Set up log callback for GitHub auth
+            self.github_auth.log_callback = self._add_log_message
+
             # Start monitoring thread
             self.auth_thread = threading.Thread(target=self._monitor_authentication, daemon=True)
             self.auth_thread.start()
