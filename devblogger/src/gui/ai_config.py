@@ -508,26 +508,21 @@ class AIConfigurationPanel(ctk.CTkFrame):
             success = self.ai_manager.update_provider_config(provider_name, config)
 
             if success:
-                CTkMessagebox(
-                    title="Configuration Saved",
-                    message=f"{provider_name.title()} configuration saved successfully!",
-                    icon="check"
-                )
+                self.logger.info(f"{provider_name.title()} configuration saved successfully!")
+                # Update status to show success
+                status_label.configure(text="✓ Configuration saved", text_color="green")
                 self._refresh_status()
+                
+                # Call callback if it exists
+                if hasattr(self, '_on_provider_config_changed') and callable(self._on_provider_config_changed):
+                    self._on_provider_config_changed()
             else:
-                CTkMessagebox(
-                    title="Error",
-                    message=f"Failed to save {provider_name} configuration.",
-                    icon="cancel"
-                )
+                self.logger.error(f"Failed to save {provider_name} configuration")
+                status_label.configure(text="✗ Save failed", text_color="red")
 
         except Exception as e:
             self.logger.error(f"Error saving {provider_name} config: {e}")
-            CTkMessagebox(
-                title="Error",
-                message=f"Error saving configuration: {str(e)}",
-                icon="cancel"
-            )
+            status_label.configure(text="✗ Save error", text_color="red")
 
     def _on_active_provider_changed(self, provider_name: str):
         """Handle active provider change."""
