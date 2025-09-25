@@ -279,6 +279,17 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             # Set up log callback for GitHub auth
             self.github_auth.log_callback = self._add_log_message
 
+            # Start the callback server first
+            try:
+                self._add_log_message("🔄 Starting callback server...")
+                self.github_auth._start_callback_server()
+                self._add_log_message("✅ Callback server started successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to start callback server: {e}")
+                self._add_log_message(f"❌ Failed to start callback server: {e}")
+                self._show_error(f"Failed to start callback server: {str(e)}")
+                return
+
             # Generate and display authorization URL immediately
             try:
                 self._add_log_message("🔄 Generating authorization URL...")
@@ -642,6 +653,12 @@ class GitHubLoginDialog(ctk.CTkToplevel):
     def _close_dialog(self):
         """Close the dialog."""
         try:
+            # Stop the callback server
+            if hasattr(self.github_auth, 'callback_server') and self.github_auth.callback_server:
+                self.logger.info("Stopping callback server...")
+                self.github_auth._stop_callback_server()
+                self._add_log_message("🛑 Callback server stopped")
+            
             self.grab_release()
             self.destroy()
         except Exception as e:
