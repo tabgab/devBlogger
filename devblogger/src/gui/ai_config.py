@@ -440,10 +440,23 @@ class AIConfigurationPanel(ctk.CTkFrame):
             providers = list(self.ai_manager.get_all_providers().keys())
             self.active_provider_dropdown.configure(values=providers)
 
-            # Set current active provider
-            active = self.ai_manager.get_active_provider()
-            if active:
-                self.active_provider_var.set(active.name)
+            # Set current active provider - prefer working providers
+            working_providers = self.ai_manager.get_working_providers()
+            configured_providers = self.ai_manager.get_configured_providers()
+            
+            if working_providers:
+                # Auto-select the first working provider
+                self.active_provider_var.set(working_providers[0])
+                self.ai_manager.set_active_provider(working_providers[0])
+            elif configured_providers:
+                # Fall back to first configured provider
+                self.active_provider_var.set(configured_providers[0])
+                self.ai_manager.set_active_provider(configured_providers[0])
+            else:
+                # Check current active provider
+                active = self.ai_manager.get_active_provider()
+                if active:
+                    self.active_provider_var.set(active.name)
 
             # Update individual provider status
             self._update_provider_status("chatgpt", self.chatgpt_status)

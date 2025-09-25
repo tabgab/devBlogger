@@ -142,7 +142,7 @@ class MainWindow(ctk.CTk):
         # Create header
         self._create_header()
 
-        # Create tabbed interface
+        # Create tabbed interface immediately below header
         self._create_tabbed_interface()
 
     def _create_header(self):
