@@ -119,7 +119,12 @@ class CommitBrowser(ctk.CTkFrame):
         search_label.grid(row=0, column=0, padx=(0, 10))
 
         self.search_var = ctk.StringVar()
-        self.search_var.trace("w", self._on_search_change)
+        # Use trace_add for Python 3.13+ compatibility
+        try:
+            self.search_var.trace_add("write", self._on_search_change)
+        except AttributeError:
+            # Fallback for older Python versions
+            self.search_var.trace("w", self._on_search_change)
         search_entry = ctk.CTkEntry(
             right_controls,
             textvariable=self.search_var,
