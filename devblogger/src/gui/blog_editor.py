@@ -363,7 +363,8 @@ Message: {commit.message}
         # Update info
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.generation_info.configure(
-            text=f"Generated on {timestamp} using {self.selected_provider}"
+            text=f"✓ Generated successfully on {timestamp} using {self.selected_provider}",
+            text_color="green"
         )
 
         # Enable save button
@@ -372,11 +373,8 @@ Message: {commit.message}
         # Store content
         self.current_blog_content = content
 
-        CTkMessagebox(
-            title="Generation Complete",
-            message="Blog entry generated successfully!",
-            icon="check"
-        )
+        # No blocking dialog - just update the status
+        self.logger.info("Blog entry generated successfully!")
 
     def _handle_generation_error(self, error_message: str):
         """Handle blog generation error."""
@@ -421,10 +419,9 @@ Message: {commit.message}
     def _save_blog_entry(self):
         """Save blog entry to file."""
         if not self.current_blog_content:
-            CTkMessagebox(
-                title="No Content",
-                message="No blog content to save.",
-                icon="warning"
+            self.generation_info.configure(
+                text="⚠ No content to save",
+                text_color="orange"
             )
             return
 
@@ -458,20 +455,19 @@ generated_by: {self.selected_provider}
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(full_content)
 
-            CTkMessagebox(
-                title="File Saved",
-                message=f"Blog entry saved to:\n{filepath}",
-                icon="check"
+            # Update status instead of showing blocking dialog
+            self.generation_info.configure(
+                text=f"✓ Saved to {filename}",
+                text_color="green"
             )
 
             self.logger.info(f"Blog entry saved to: {filepath}")
 
         except Exception as e:
             self.logger.error(f"Error saving blog entry: {e}")
-            CTkMessagebox(
-                title="Save Error",
-                message=f"Failed to save blog entry: {str(e)}",
-                icon="cancel"
+            self.generation_info.configure(
+                text=f"✗ Save failed: {str(e)[:50]}...",
+                text_color="red"
             )
 
     def _reset_editor(self):
@@ -480,8 +476,11 @@ generated_by: {self.selected_provider}
         self.blog_editor.delete("1.0", "end")
         self.current_blog_content = ""
 
-        # Reset info
-        self.generation_info.configure(text="Ready to generate blog entry")
+        # Reset info with visual feedback
+        self.generation_info.configure(
+            text="✓ Editor reset - Ready to generate blog entry",
+            text_color="blue"
+        )
 
         # Disable save button
         self.save_button.configure(state="disabled")
@@ -492,11 +491,8 @@ generated_by: {self.selected_provider}
             self.prompt_text.delete("1.0", "end")
             self.prompt_text.insert("1.0", default_prompt)
 
-        CTkMessagebox(
-            title="Editor Reset",
-            message="Blog editor has been reset.",
-            icon="info"
-        )
+        # No blocking dialog - just log the action
+        self.logger.info("Blog editor has been reset")
 
     def get_blog_content(self) -> str:
         """Get current blog content."""
