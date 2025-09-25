@@ -127,7 +127,9 @@ class GitHubClient:
 
         # If we're getting close to the limit, wait
         if self.rate_limit.remaining < 10:
-            wait_time = (self.rate_limit.reset - time.time()) + 1
+            # Convert datetime to timestamp for calculation
+            reset_timestamp = self.rate_limit.reset.timestamp()
+            wait_time = (reset_timestamp - time.time()) + 1
             if wait_time > 0:
                 self.logger.info(f"Rate limit low, waiting {wait_time:.1f} seconds")
                 time.sleep(wait_time)
@@ -330,10 +332,16 @@ class GitHubClient:
 
         # Extract core rate limit (not search)
         core_limit = rate_data.get('rate', {})
+        
+        # Create a datetime object from the reset timestamp
+        from datetime import datetime
+        reset_timestamp = core_limit.get('reset', 0)
+        reset_datetime = datetime.fromtimestamp(reset_timestamp)
+        
         return GitHubRateLimit(
             limit=core_limit.get('limit', 0),
             remaining=core_limit.get('remaining', 0),
-            reset=time.time() + core_limit.get('reset', 0),
+            reset=reset_datetime,
             used=core_limit.get('limit', 0) - core_limit.get('remaining', 0),
             resource='core'
         )

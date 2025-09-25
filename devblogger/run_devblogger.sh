@@ -26,6 +26,6 @@ fi
 
 echo "✅ Virtual environment activated: $VIRTUAL_ENV"
 
-# Run DevBlogger with debug logging
-echo "🚀 Starting DevBlogger with debug logging..."
-python -c "from src.main import debug_main; debug_main()" "$@"
+# Run DevBlogger
+echo "🚀 Starting DevBlogger..."
+python -m src.main "$@"
