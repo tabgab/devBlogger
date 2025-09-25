@@ -494,7 +494,7 @@ class MainWindow(ctk.CTk):
         if not self.current_repo or not self.github_client:
             return
 
-        # Clear existing commit browser
+        # Clear existing commit browser and placeholder
         self._clear_commit_browser()
 
         # Create new commit browser
@@ -505,12 +505,20 @@ class MainWindow(ctk.CTk):
             self.database,
             self._on_commits_selected
         )
+        
+        # Pack the commit browser to make it visible
+        self.commit_browser.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
     def _clear_commit_browser(self):
-        """Clear commit browser."""
+        """Clear commit browser and any placeholder content."""
+        # Clear existing commit browser
         if self.commit_browser:
             self.commit_browser.destroy()
             self.commit_browser = None
+        
+        # Clear any existing widgets in the main area (like placeholder labels)
+        for widget in self.github_main_area.winfo_children():
+            widget.destroy()
 
     def _on_commits_selected(self, commits: list):
         """Handle commit selection for blog generation."""
