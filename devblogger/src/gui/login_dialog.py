@@ -65,7 +65,7 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         # Configure dialog
         self.title("GitHub Authentication")
         self.geometry("500x400")
-        self.resizable(False, False)
+        self.resizable(True, True)  # Allow resizing to see more log text
 
         # Center on parent without modal behavior to prevent macOS segfault
         self.transient(self.master)
@@ -199,6 +199,7 @@ class GitHubLoginDialog(ctk.CTkToplevel):
 
             self.auth_in_progress = True
             self._update_ui_state()
+            self._add_log_message("🔄 Starting authentication process...")
             self.logger.info("Authentication state updated, starting monitoring thread")
 
             # Start monitoring thread

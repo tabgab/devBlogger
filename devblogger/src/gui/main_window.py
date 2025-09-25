@@ -412,6 +412,11 @@ class MainWindow(ctk.CTk):
             icon="check"
         )
 
+    def _on_login_dialog_closed(self):
+        """Handle login dialog being closed without success."""
+        self.auth_in_progress = False  # Reset the flag
+        self.logger.info("Login dialog closed, resetting auth_in_progress flag")
+
     def _initialize_github_client(self):
         """Initialize GitHub API client."""
         try:
@@ -548,6 +553,14 @@ class MainWindow(ctk.CTk):
             self.logger.info("User already authenticated, refreshing repositories")
             # Already authenticated, just refresh repositories
             self._refresh_repositories()
+
+    def _get_log_callback(self):
+        """Get a callback function for logging authentication messages."""
+        def log_callback(message: str):
+            # This will be called by the GitHub auth module to log messages
+            # We can't directly access the login dialog here, so we'll use a different approach
+            self.logger.info(f"AUTH LOG: {message}")
+        return log_callback
 
     def _show_settings(self):
         """Show application settings."""

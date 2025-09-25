@@ -77,14 +77,18 @@ class GitHubAuth:
         base_url = "https://github.com/login/oauth/authorize"
         return f"{base_url}?{urlencode(params)}"
 
-    def authenticate(self, parent_window=None) -> bool:
+    def authenticate(self, parent_window=None, log_callback=None) -> bool:
         """Start OAuth authentication flow."""
         self.logger.info("Starting OAuth authentication flow")
+        self.log_callback = log_callback  # Store callback for logging
+
         if not self.is_configured():
             self.logger.error("GitHub OAuth is not configured")
+            self._log("❌ GitHub OAuth is not configured. Please check your settings.")
             raise ValueError("GitHub OAuth is not configured")
 
         try:
+            self._log("🔄 Starting callback server...")
             self.logger.info("Starting callback server")
             # Start local server to handle callback
             self._start_callback_server()
@@ -92,10 +96,12 @@ class GitHubAuth:
             # Open browser for authentication
             auth_url = self.get_authorization_url()
             self.logger.info(f"Opening browser to: {auth_url}")
+            self._log(f"🔗 Opening browser to: {auth_url}")
 
             if parent_window and ctk:
                 # Show progress dialog
                 self.logger.info("Showing authentication dialog")
+                self._log("📋 Showing authentication dialog...")
                 self._show_auth_dialog(parent_window)
 
             # Open browser - handle gracefully
@@ -104,32 +110,51 @@ class GitHubAuth:
                 print(f"🔗 If browser doesn't open automatically, visit: {auth_url}")
                 webbrowser.open(auth_url)
                 self.logger.info("Browser opened successfully")
+                self._log("🌐 Browser opened successfully")
             except Exception as e:
                 self.logger.error(f"Browser couldn't be opened automatically: {e}")
+                self._log(f"⚠️ Browser couldn't be opened automatically: {e}")
                 print(f"🔗 Browser couldn't be opened automatically: {e}")
                 print(f"🔗 Please manually open this URL in your browser: {auth_url}")
 
             # Wait for authentication to complete
             self.logger.info("Waiting for authentication to complete")
+            self._log("⏳ Waiting for authentication to complete...")
             self._wait_for_authentication()
 
             # Exchange authorization code for access token
             self.logger.info("Exchanging authorization code for access token")
+            self._log("🔄 Exchanging authorization code for access token...")
             if self._exchange_code_for_token():
                 # Get user data
                 self.logger.info("Authentication successful, getting user data")
+                self._log("✅ Authentication successful, getting user data...")
                 self._get_user_data()
+                self._log("🎉 Authentication completed successfully!")
                 return True
             else:
                 self.logger.error("Authentication failed - could not exchange code for token")
+                self._log("❌ Authentication failed - could not exchange code for token")
                 return False
 
         except Exception as e:
             self.logger.error(f"Authentication error: {e}", exc_info=True)
+            self._log(f"❌ Authentication error: {e}")
             return False
         finally:
             self.logger.info("Stopping callback server")
+            self._log("🛑 Stopping callback server...")
             self._stop_callback_server()
+
+    def _log(self, message: str):
+        """Log a message using the callback if available."""
+        if self.log_callback:
+            try:
+                self.log_callback(message)
+            except Exception as e:
+                self.logger.error(f"Error in log callback: {e}")
+        else:
+            self.logger.info(f"LOG: {message}")
 
     def _start_callback_server(self):
         """Start local HTTP server to handle OAuth callback."""
@@ -140,6 +165,7 @@ class GitHubAuth:
             class CallbackHandler(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
                     self.logger.info(f"Callback received: {self.path}")
+                    CallbackHandler.auth_instance._log(f"📨 Callback received: {self.path}")
 
                     # Parse query parameters
                     parsed_url = urlparse(self.path)
@@ -154,21 +180,25 @@ class GitHubAuth:
 
                     if returned_state != expected_state:
                         self.logger.error(f"State mismatch! Received: {returned_state}, Expected: {expected_state}")
+                        CallbackHandler.auth_instance._log(f"❌ State mismatch! Received: {returned_state}, Expected: {expected_state}")
                         self.send_error(400, "Invalid state parameter")
                         return
 
                     # Get authorization code
                     self.auth_code = query_params.get('code', [''])[0]
                     self.logger.info(f"Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "No authorization code received")
+                    CallbackHandler.auth_instance._log(f"🔑 Authorization code received: {self.auth_code[:10]}..." if self.auth_code else "❌ No authorization code received")
 
                     if not self.auth_code:
                         self.logger.error("No authorization code in callback")
+                        CallbackHandler.auth_instance._log("❌ No authorization code in callback")
                         self.send_error(400, "No authorization code received")
                         return
 
                     # Store the authorization code in the auth instance
                     CallbackHandler.auth_instance.auth_code = self.auth_code
                     self.logger.info("Authorization code stored successfully")
+                    CallbackHandler.auth_instance._log("✅ Authorization code stored successfully")
 
                     # Send success response
                     self.send_response(200)
@@ -195,6 +225,7 @@ class GitHubAuth:
 
                     self.wfile.write(response_html.encode())
                     self.logger.info("Success response sent to browser")
+                    CallbackHandler.auth_instance._log("🌐 Success response sent to browser")
 
                 def log_message(self, format, *args):
                     # Add logger to callback handler
