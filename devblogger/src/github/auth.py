@@ -231,14 +231,20 @@ class GitHubAuth:
     def _wait_for_authentication(self, timeout: int = 300):
         """Wait for OAuth authentication to complete."""
         start_time = time.time()
+        self.logger.info(f"Starting to wait for authentication (timeout: {timeout}s)")
 
         while time.time() - start_time < timeout:
+            elapsed = time.time() - start_time
+            if elapsed % 5 == 0:  # Log every 5 seconds
+                self.logger.info(f"Waiting for auth code... ({elapsed:.1f}s elapsed, auth_code present: {bool(self.auth_code)})")
+
             if self.auth_code:
-                self.logger.info("Authorization code received")
+                self.logger.info(f"Authorization code received after {elapsed:.1f}s: {self.auth_code[:10]}...")
                 break
             time.sleep(0.1)
 
         if not self.auth_code:
+            self.logger.error(f"Authentication timeout after {timeout}s - no authorization code received")
             raise TimeoutError("Authentication timeout - no authorization code received")
 
     def _exchange_code_for_token(self) -> bool:

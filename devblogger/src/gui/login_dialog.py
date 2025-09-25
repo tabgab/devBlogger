@@ -224,12 +224,21 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         """Monitor authentication progress in background thread."""
         max_wait_time = 300  # 5 minutes
         start_time = time.time()
+        self.logger.info(f"Starting authentication monitoring (max wait: {max_wait_time}s)")
 
         while self.auth_in_progress and (time.time() - start_time) < max_wait_time:
             try:
+                elapsed = time.time() - start_time
+                if elapsed % 10 == 0:  # Log every 10 seconds
+                    self.logger.info(f"Monitoring authentication... ({elapsed:.1f}s elapsed)")
+                    self.logger.info(f"Auth in progress: {self.auth_in_progress}")
+                    self.logger.info(f"GitHub auth authenticated: {self.github_auth.is_authenticated()}")
+                    self.logger.info(f"GitHub auth has access token: {bool(self.github_auth.access_token)}")
+                    self.logger.info(f"GitHub auth has user data: {bool(self.github_auth.user_data)}")
+
                 if self.github_auth.is_authenticated():
                     # Authentication successful
-                    self.logger.info("Authentication successful")
+                    self.logger.info(f"Authentication successful after {elapsed:.1f}s!")
                     self.after(0, self._handle_auth_success)
                     return
 
@@ -237,13 +246,17 @@ class GitHubLoginDialog(ctk.CTkToplevel):
                 time.sleep(1)
 
             except Exception as e:
-                self.logger.error(f"Error during authentication monitoring: {e}")
+                self.logger.error(f"Error during authentication monitoring: {e}", exc_info=True)
                 self.after(0, lambda: self._show_error(f"Authentication error: {str(e)}"))
                 return
 
         # Timeout
         if self.auth_in_progress:
-            self.logger.warning("Authentication timeout")
+            self.logger.warning(f"Authentication timeout after {max_wait_time}s")
+            self.logger.warning(f"Final state - Auth in progress: {self.auth_in_progress}")
+            self.logger.warning(f"Final state - GitHub auth authenticated: {self.github_auth.is_authenticated()}")
+            self.logger.warning(f"Final state - Has access token: {bool(self.github_auth.access_token)}")
+            self.logger.warning(f"Final state - Has user data: {bool(self.github_auth.user_data)}")
             self.after(0, self._handle_auth_timeout)
 
     def _handle_auth_success(self):
