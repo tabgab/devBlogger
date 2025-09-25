@@ -302,8 +302,9 @@ class BlogEditor(ctk.CTkFrame):
                     loop.close()
 
             except Exception as e:
-                self.logger.error(f"Error generating blog entry: {e}")
-                self.after(0, lambda: self._handle_generation_error(str(e)))
+                error_msg = str(e)
+                self.logger.error(f"Error generating blog entry: {error_msg}")
+                self.after(0, lambda msg=error_msg: self._handle_generation_error(msg))
             finally:
                 self.generation_in_progress = False
                 self.after(0, self._update_ui_state)

@@ -770,3 +770,7 @@ class MainWindow(ctk.CTk):
         # Refresh blog editor if it exists
         if self.blog_editor:
             self.blog_editor._load_initial_content()
+            
+        # Also call the callback if it exists on the AI config panel
+        if hasattr(self.ai_config, '_on_provider_config_changed') and callable(self.ai_config._on_provider_config_changed):
+            self.ai_config._on_provider_config_changed()
