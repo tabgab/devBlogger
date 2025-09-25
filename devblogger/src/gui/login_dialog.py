@@ -429,24 +429,40 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         while self.auth_in_progress and (time.time() - start_time) < max_wait_time:
             try:
                 elapsed = time.time() - start_time
-                if elapsed % 10 == 0:  # Log every 10 seconds
+                if elapsed % 2 == 0:  # Log every 2 seconds for more frequent updates
                     self.logger.info(f"Monitoring authentication... ({elapsed:.1f}s elapsed)")
                     self.logger.info(f"Auth in progress: {self.auth_in_progress}")
                     self.logger.info(f"GitHub auth authenticated: {self.github_auth.is_authenticated()}")
                     self.logger.info(f"GitHub auth has access token: {bool(self.github_auth.access_token)}")
                     self.logger.info(f"GitHub auth has user data: {bool(self.github_auth.user_data)}")
+                    self.logger.info(f"GitHub auth has auth code: {bool(self.github_auth.auth_code)}")
 
+                # Check multiple conditions for successful authentication
                 if self.github_auth.is_authenticated():
                     # Authentication successful
                     self.logger.info(f"Authentication successful after {elapsed:.1f}s!")
+                    self._add_log_message("✅ Authentication successful!")
                     self.after(0, self._handle_auth_success)
                     return
 
+                # Also check if we have both access token and user data
+                if self.github_auth.access_token and self.github_auth.user_data:
+                    self.logger.info(f"Authentication completed with token and user data after {elapsed:.1f}s!")
+                    self._add_log_message("✅ Authentication completed successfully!")
+                    self.after(0, self._handle_auth_success)
+                    return
+
+                # Check if we have an auth code (indicates callback was received)
+                if self.github_auth.auth_code and not self.github_auth.access_token:
+                    self.logger.info(f"Authorization code received, waiting for token exchange... ({elapsed:.1f}s elapsed)")
+                    self._add_log_message("🔄 Authorization code received, exchanging for token...")
+
                 # Wait before checking again
-                time.sleep(1)
+                time.sleep(0.5)  # Check more frequently
 
             except Exception as e:
                 self.logger.error(f"Error during authentication monitoring: {e}", exc_info=True)
+                self._add_log_message(f"❌ Authentication monitoring error: {str(e)}")
                 self.after(0, lambda: self._show_error(f"Authentication error: {str(e)}"))
                 return
 
@@ -457,6 +473,8 @@ class GitHubLoginDialog(ctk.CTkToplevel):
             self.logger.warning(f"Final state - GitHub auth authenticated: {self.github_auth.is_authenticated()}")
             self.logger.warning(f"Final state - Has access token: {bool(self.github_auth.access_token)}")
             self.logger.warning(f"Final state - Has user data: {bool(self.github_auth.user_data)}")
+            self.logger.warning(f"Final state - Has auth code: {bool(self.github_auth.auth_code)}")
+            self._add_log_message(f"⏰ Authentication timed out after {max_wait_time} seconds")
             self.after(0, self._handle_auth_timeout)
 
     def _handle_auth_success(self):
