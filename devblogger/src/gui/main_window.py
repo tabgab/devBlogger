@@ -443,21 +443,20 @@ class MainWindow(ctk.CTk):
             self.repo_dropdown.configure(state="disabled")
             self.repo_dropdown.set("Loading repositories...")
 
-            # Get repositories in a separate thread
-            def load_repositories():
+            # Load repositories on main thread to avoid autorelease pool issues on macOS
+            def load_repositories_main_thread():
                 try:
                     repositories = self.github_client.get_user_repositories()
                     repo_names = ["Select Repository..."] + [repo.full_name for repo in repositories]
-
-                    # Update UI in main thread
-                    self.after(0, lambda: self._update_repository_list(repo_names))
+                    self._update_repository_list(repo_names)
 
                 except Exception as e:
                     error_msg = str(e)
                     self.logger.error(f"Error loading repositories: {error_msg}")
-                    self.after(0, lambda: self._handle_repository_error(error_msg))
+                    self._handle_repository_error(error_msg)
 
-            threading.Thread(target=load_repositories, daemon=True).start()
+            # Schedule on main thread using after() to avoid blocking UI
+            self.after(100, load_repositories_main_thread)
 
         except Exception as e:
             self.logger.error(f"Error refreshing repositories: {e}")
