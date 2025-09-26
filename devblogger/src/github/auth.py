@@ -54,6 +54,7 @@ class GitHubAuth:
         self.callback_server = None
         self.server_thread = None
         self.log_callback = None
+        self.success_callback = None
         self.token_exchange_in_progress = False
 
     def is_configured(self) -> bool:
@@ -260,6 +261,21 @@ class GitHubAuth:
                                     if success:
                                         CallbackHandler.auth_instance._log("✅ User data retrieved successfully!")
                                         CallbackHandler.auth_instance._log("🎉 Authentication completed successfully!")
+                                        
+                                        # Call success callback if available - schedule on main thread
+                                        if CallbackHandler.auth_instance.success_callback:
+                                            try:
+                                                # Import here to avoid circular imports
+                                                import tkinter as tk
+                                                # Schedule callback on main thread to avoid GUI crashes
+                                                if hasattr(tk, '_default_root') and tk._default_root:
+                                                    tk._default_root.after(0, CallbackHandler.auth_instance.success_callback)
+                                                else:
+                                                    # Fallback - call directly but log warning
+                                                    CallbackHandler.auth_instance.logger.warning("No main thread available, calling success callback directly")
+                                                    CallbackHandler.auth_instance.success_callback()
+                                            except Exception as e:
+                                                CallbackHandler.auth_instance.logger.error(f"Error in success callback: {e}")
                                     else:
                                         CallbackHandler.auth_instance._log("❌ Failed to get user data")
                                 else:
@@ -503,14 +519,27 @@ class GitHubAuth:
         """Stop the callback server."""
         if self.callback_server:
             try:
-                # On macOS, server shutdown causes autorelease pool crashes
-                # Just mark as None and let the daemon thread clean up naturally
-                self.logger.info("Marking callback server for cleanup (avoiding macOS crash)")
+                self.logger.info("Stopping callback server...")
+                self.callback_server.shutdown()
+                self.callback_server.server_close()
+                self.logger.info("Callback server stopped successfully")
+                
+                # Wait for server thread to finish
+                if self.server_thread and self.server_thread.is_alive():
+                    self.server_thread.join(timeout=2.0)
+                    if self.server_thread.is_alive():
+                        self.logger.warning("Server thread did not stop within timeout")
+                    else:
+                        self.logger.info("Server thread stopped successfully")
+                
                 self.callback_server = None
                 self.server_thread = None
                 
             except Exception as e:
                 self.logger.error(f"Error stopping callback server: {e}")
+                # Force cleanup
+                self.callback_server = None
+                self.server_thread = None
 
     def logout(self):
         """Clear authentication data."""

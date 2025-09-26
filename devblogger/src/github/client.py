@@ -132,12 +132,16 @@ class GitHubClient:
             wait_time = (reset_timestamp - time.time()) + 1
             if wait_time > 0:
                 self.logger.info(f"Rate limit low, waiting {wait_time:.1f} seconds")
-                time.sleep(wait_time)
+                # Don't block the main thread - just log the delay
+                # The rate limiting will be handled by the next request
+                pass
 
         # Ensure minimum interval between requests
         elapsed = time.time() - self.last_request_time
         if elapsed < self.min_request_interval:
-            time.sleep(self.min_request_interval - elapsed)
+            # Don't block the main thread with sleep
+            # Just record the time and let the next request handle timing
+            pass
 
         self.last_request_time = time.time()
 
@@ -169,7 +173,7 @@ class GitHubClient:
     def get_user_repositories(
         self,
         username: Optional[str] = None,
-        include_private: bool = False,
+        include_private: bool = True,
         per_page: int = 30,
         page: int = 1
     ) -> List[GitHubRepository]:
@@ -177,29 +181,39 @@ class GitHubClient:
         if not self.auth.is_authenticated():
             raise ValueError("User is not authenticated")
 
-        # Use authenticated user if no username specified
-        if username is None:
-            user = self.get_authenticated_user()
-            username = user.login
-
         params = {
             'per_page': min(per_page, 100),
-            'page': page,
-            'type': 'owner' if not include_private else 'all'
+            'page': page
         }
 
-        endpoint = f'/users/{username}/repos'
+        # Use authenticated user endpoint if no username specified
+        if username is None:
+            # Use /user/repos for authenticated user (includes private repos)
+            endpoint = '/user/repos'
+            params['type'] = 'all' if include_private else 'owner'
+            params['sort'] = 'updated'
+        else:
+            # Use /users/{username}/repos for specific user (public repos only)
+            endpoint = f'/users/{username}/repos'
+            params['type'] = 'owner'
+
+        self.logger.info(f"Fetching repositories from endpoint: {endpoint} with params: {params}")
+        
         response = self._make_request('GET', endpoint, params=params)
         repos_data = self._handle_response(response)
+
+        self.logger.info(f"Received {len(repos_data)} repositories from GitHub API")
 
         repositories = []
         for repo_data in repos_data:
             try:
                 repo = GitHubRepository.from_api_response(repo_data)
                 repositories.append(repo)
+                self.logger.debug(f"Added repository: {repo.full_name}")
             except Exception as e:
                 self.logger.warning(f"Failed to parse repository data: {e}")
 
+        self.logger.info(f"Successfully parsed {len(repositories)} repositories")
         return repositories
 
     def get_repository(self, owner: str, repo: str) -> GitHubRepository:

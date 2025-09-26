@@ -632,6 +632,7 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         """Cancel authentication process."""
         if self.auth_in_progress:
             self.auth_in_progress = False
+            self.monitoring_active = False  # Stop monitoring
             if self.auth_thread and self.auth_thread.is_alive():
                 self.auth_thread.join(timeout=1)
 
@@ -652,72 +653,51 @@ class GitHubLoginDialog(ctk.CTkToplevel):
     def _close_dialog(self):
         """Close the dialog."""
         try:
-            # Stop the callback server
+            # Stop the callback server in background to avoid blocking
             if hasattr(self.github_auth, 'callback_server') and self.github_auth.callback_server:
                 self.logger.info("Stopping callback server...")
-                self.github_auth._stop_callback_server()
-                self._add_log_message("🛑 Callback server stopped")
+                # Don't wait for server to stop - do it in background
+                def stop_server_background():
+                    try:
+                        self.github_auth._stop_callback_server()
+                    except Exception as e:
+                        self.logger.error(f"Error stopping callback server: {e}")
+                
+                import threading
+                threading.Thread(target=stop_server_background, daemon=True).start()
+                self._add_log_message("🛑 Callback server stopping...")
             
-            self.grab_release()
+            # Don't use grab_release() as it can block on some systems
+            # Just destroy the dialog immediately
             self.destroy()
         except Exception as e:
             self.logger.error(f"Error closing dialog: {e}")
 
     def _start_main_thread_monitoring(self):
-        """Start authentication monitoring on main thread using after()."""
+        """Start authentication monitoring - no automatic polling."""
         self.monitoring_start_time = time.time()
         self.max_wait_time = 300  # 5 minutes
-        self._monitor_auth_main_thread()
-
-    def _monitor_auth_main_thread(self):
-        """Monitor authentication on main thread to avoid threading issues."""
-        if not self.auth_in_progress:
-            return
-
-        elapsed = time.time() - self.monitoring_start_time
+        self.monitoring_active = True
         
-        # Check for timeout
-        if elapsed > self.max_wait_time:
-            self.logger.warning(f"Authentication timeout after {self.max_wait_time}s")
-            self._handle_auth_timeout()
-            return
+        # Set up callback in GitHub auth to notify us when authentication completes
+        self.github_auth.success_callback = self._on_auth_complete
+        
+        # Just show instructions - no automatic polling
+        self._add_log_message("🔄 Waiting for GitHub authorization...")
+        self._add_log_message("📋 Complete the authorization in your browser, then click 'Check Authentication Status'")
 
-        try:
-            # Check multiple conditions for successful authentication
-            if self.github_auth.is_authenticated():
-                self.logger.info(f"Authentication successful after {elapsed:.1f}s!")
-                self._add_log_message("✅ Authentication successful!")
-                self._handle_auth_success()
-                return
-
-            # Check if we have both access token and user data
-            if self.github_auth.access_token and self.github_auth.user_data:
-                self.logger.info(f"Authentication completed with token and user data after {elapsed:.1f}s!")
-                self._add_log_message("✅ Authentication completed successfully!")
-                self._handle_auth_success()
-                return
-
-            # Check if we have access token
-            if self.github_auth.access_token:
-                self.logger.info(f"Access token received after {elapsed:.1f}s - authentication successful!")
-                self._add_log_message("✅ Access token received - authentication successful!")
-                self._handle_auth_success()
-                return
-
-            # Check if we have user data
-            if self.github_auth.user_data:
-                self.logger.info(f"User data received after {elapsed:.1f}s - authentication successful!")
-                self._add_log_message("✅ User data received - authentication successful!")
-                self._handle_auth_success()
-                return
-
-            # Schedule next check
-            self.after(500, self._monitor_auth_main_thread)  # Check every 500ms
-
-        except Exception as e:
-            self.logger.error(f"Error during authentication monitoring: {e}", exc_info=True)
-            self._add_log_message(f"❌ Authentication monitoring error: {str(e)}")
-            self._show_error(f"Authentication error: {str(e)}")
+    def _on_auth_complete(self):
+        """Called by GitHub auth when authentication completes."""
+        if hasattr(self, 'monitoring_active') and self.monitoring_active:
+            self.monitoring_active = False
+            try:
+                self._add_log_message("✅ Authentication completed!")
+                # Schedule dialog close on main thread to avoid widget destruction issues
+                self.after(100, self._handle_auth_success)
+            except Exception as e:
+                self.logger.error(f"Error in auth complete callback: {e}")
+                # Force close dialog even if there's an error
+                self.after(100, self._handle_auth_success)
 
     def _on_closing(self):
         """Handle dialog closing event."""

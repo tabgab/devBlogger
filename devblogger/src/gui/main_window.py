@@ -5,6 +5,7 @@ DevBlogger - Main GUI Window
 
 import logging
 import threading
+import time
 from typing import Optional, Dict, Any
 import customtkinter as ctk
 
@@ -100,10 +101,10 @@ class MainWindow(ctk.CTk):
         self._check_auth_status()
         self.logger.info("Authentication status check completed")
 
-        # Update AI status
-        self.logger.info("Updating AI status")
-        self._update_ai_status()
-        self.logger.info("AI status update completed")
+        # Set initial AI status without testing connections
+        self.logger.info("Setting initial AI status")
+        self._set_initial_ai_status()
+        self.logger.info("Initial AI status set")
 
     def _setup_window(self):
         """Setup main window properties."""
@@ -332,10 +333,14 @@ class MainWindow(ctk.CTk):
         self.repo_dropdown.grid(row=0, column=1, padx=(0, 10))
 
         # Refresh repositories button
+        def refresh_with_logging():
+            self.logger.info("🔴 REFRESH BUTTON CLICKED - Button click registered!")
+            self._refresh_repositories()
+        
         refresh_repos_button = ctk.CTkButton(
             github_controls,
             text="Refresh",
-            command=self._refresh_repositories,
+            command=refresh_with_logging,
             width=80
         )
         refresh_repos_button.grid(row=0, column=2)
@@ -414,25 +419,51 @@ class MainWindow(ctk.CTk):
         """Update GitHub connection status indicators."""
         if connected:
             user_info = self.github_auth.get_user_info()
-            self.logger.info(f"User info retrieved: {user_info}")
+            username = user_info.get('login') if user_info else None
             
-            # Try multiple possible username fields
-            username = (user_info.get('login') or 
-                       user_info.get('name') or 
-                       user_info.get('email', '').split('@')[0] if user_info.get('email') else None or
-                       'Unknown')
+            if username:
+                # User data is available
+                self.github_status_label.configure(text=f"GitHub: {username}")
+                self.github_status_indicator.configure(text="✓", text_color="green")
+            else:
+                # User data not yet available, but authentication is in progress
+                self.github_status_label.configure(text="GitHub: Authenticating...")
+                self.github_status_indicator.configure(text="⏳", text_color="blue")
             
-            self.logger.info(f"Extracted username: {username}")
-            self.github_status_label.configure(text=f"GitHub: {username}")
-            self.github_status_indicator.configure(text="✓", text_color="green")
             self.login_button.configure(text="Scan Available Repos", fg_color="green", hover_color="darkgreen")
         else:
             self.github_status_label.configure(text="GitHub: Not Connected")
             self.github_status_indicator.configure(text="✗", text_color="red")
             self.login_button.configure(text="Scan Available Repos", fg_color="green", hover_color="darkgreen")
 
+    def _set_initial_ai_status(self):
+        """Set initial AI status without testing connections."""
+        try:
+            # Just check if providers are configured, don't test connections
+            configured_count = 0
+            provider_names = []
+            
+            # Check each provider configuration without testing
+            for name, provider in self.ai_manager.get_all_providers().items():
+                if provider.is_configured():
+                    configured_count += 1
+                    provider_names.append(name)
+            
+            if configured_count > 0:
+                # Show first configured provider
+                self.ai_status_label.configure(text=f"AI: {provider_names[0]} (configured)")
+                self.ai_status_indicator.configure(text="?", text_color="blue")
+            else:
+                self.ai_status_label.configure(text="AI: Not Configured")
+                self.ai_status_indicator.configure(text="✗", text_color="red")
+                
+        except Exception as e:
+            self.logger.error(f"Error setting initial AI status: {e}")
+            self.ai_status_label.configure(text="AI: Error")
+            self.ai_status_indicator.configure(text="✗", text_color="red")
+
     def _update_ai_status(self):
-        """Update AI status indicators."""
+        """Update AI status indicators by testing connections."""
         working_providers = self.ai_manager.get_working_providers()
         configured_providers = self.ai_manager.get_configured_providers()
 
@@ -485,56 +516,114 @@ class MainWindow(ctk.CTk):
 
     def _on_login_success(self):
         """Handle successful GitHub login."""
-        # Ensure this runs on the main thread
-        def update_ui():
-            self.auth_in_progress = False  # Reset the flag
-            
-            # Wait a moment for user data to be available, then update status
-            def check_and_update():
-                if self.github_auth.is_authenticated() and self.github_auth.get_user_info():
-                    self.logger.info("User data is available, updating GitHub status")
-                    self._update_github_status(True)
-                    self._initialize_github_client()
-                    self._refresh_repositories()
-                else:
-                    self.logger.info("User data not yet available, retrying in 500ms")
-                    # Retry after a short delay
-                    self.after(500, check_and_update)
-            
-            # Start checking for user data
-            check_and_update()
+        self.logger.info("Login success callback triggered")
         
-        # Schedule UI update on main thread
-        self.after(0, update_ui)
+        # Reset the auth flag immediately
+        self.auth_in_progress = False
+        
+        # Stop the authentication server immediately - we don't need it anymore
+        if self.github_auth.callback_server:
+            self.github_auth._stop_callback_server()
+        
+        # Set up a callback for when user data becomes available
+        self.github_auth.success_callback = self._on_user_data_available
+        
+        # Update UI immediately - this will show "Authenticating..." if user data isn't ready
+        self.logger.info("Authentication completed, updating UI immediately")
+        self._update_github_status(True)
+        self._initialize_github_client()
+    
+    def _on_user_data_available(self):
+        """Called when user data becomes available after token exchange."""
+        self.logger.info("User data available callback triggered")
+        # Update the GitHub status now that we have user data
+        self._update_github_status(True)
 
     def _initialize_github_client(self):
         """Initialize GitHub API client."""
-        try:
-            self.github_client = GitHubClient(self.github_auth, self.settings)
-        except Exception as e:
-            self.logger.error(f"Error initializing GitHub client: {e}")
-            CTkMessagebox(
-                title="Error",
-                message=f"Failed to initialize GitHub client: {str(e)}",
-                icon="cancel"
-            )
+        def init_client_background():
+            try:
+                self.logger.info("Initializing GitHub client in background...")
+                client = GitHubClient(self.github_auth, self.settings)
+                
+                # Set client on main thread
+                def set_client():
+                    self.github_client = client
+                    self.logger.info("GitHub client initialized successfully")
+                
+                self.after(0, set_client)
+                
+            except Exception as e:
+                self.logger.error(f"Error initializing GitHub client: {e}")
+                
+                def show_error():
+                    CTkMessagebox(
+                        title="Error",
+                        message=f"Failed to initialize GitHub client: {str(e)}",
+                        icon="cancel"
+                    )
+                
+                self.after(0, show_error)
+        
+        # Initialize client in background thread to avoid any blocking
+        threading.Thread(target=init_client_background, daemon=True).start()
 
     def _refresh_repositories(self):
-        """Refresh list of available repositories."""
-        if not self.github_auth.is_authenticated() or not self.github_client:
+        """Refresh list of available repositories - only when user clicks Refresh."""
+        self.logger.info("=== REFRESH REPOSITORIES CALLED ===")
+        
+        if not self.github_auth.is_authenticated():
+            self.logger.warning("Refresh attempted but not authenticated")
+            return
+        
+        if not self.github_client:
+            self.logger.info("Refresh attempted but GitHub client not ready yet")
             return
 
+        # Check if already loading
+        if hasattr(self, '_repo_loading') and self._repo_loading:
+            self.logger.info("Refresh attempted but already loading")
+            return
+
+        self.logger.info("=== STARTING REPOSITORY REFRESH ===")
+        
         try:
-            # Show loading indicator
+            # Set loading state
+            self._repo_loading = True
+            self.logger.info("Set loading state to True")
+            
+            # Disable controls and show loading
+            self.logger.info("Disabling dropdown and showing loading...")
             self.repo_dropdown.configure(state="disabled")
             self.repo_dropdown.set("Loading repositories...")
+            self.logger.info("Dropdown configured")
+            
+            # Disable refresh button and show cancel option
+            self.logger.info("Looking for refresh button...")
+            refresh_button = None
+            for widget in self.repo_dropdown.master.winfo_children():
+                if isinstance(widget, ctk.CTkButton) and widget.cget("text") == "Refresh":
+                    refresh_button = widget
+                    break
+            
+            if refresh_button:
+                self.logger.info("Found refresh button, changing to Cancel")
+                refresh_button.configure(text="Cancel", command=self._cancel_repo_loading)
+            else:
+                self.logger.warning("Refresh button not found!")
 
-            # Load repositories in background thread to avoid blocking UI
+            self.logger.info("=== STARTING BACKGROUND THREAD ===")
+            
+            # Load repositories in background thread
             def load_repositories_thread():
                 try:
+                    self.logger.info("Background thread started - Loading repositories from GitHub...")
                     repositories = self.github_client.get_user_repositories()
+                    self.logger.info(f"Got {len(repositories)} repositories from GitHub")
                     repo_names = ["Select Repository..."] + [repo.full_name for repo in repositories]
+                    
                     # Schedule UI update on main thread
+                    self.logger.info("Scheduling UI update on main thread")
                     self.after(0, lambda: self._update_repository_list(repo_names))
 
                 except Exception as e:
@@ -544,25 +633,77 @@ class MainWindow(ctk.CTk):
                     self.after(0, lambda: self._handle_repository_error(error_msg))
 
             # Start background thread
-            threading.Thread(target=load_repositories_thread, daemon=True).start()
+            self._repo_thread = threading.Thread(target=load_repositories_thread, daemon=True)
+            self._repo_thread.start()
+            self.logger.info("Background thread started successfully")
+            self.logger.info("=== REFRESH REPOSITORIES METHOD COMPLETED ===")
 
         except Exception as e:
             self.logger.error(f"Error refreshing repositories: {e}")
-            CTkMessagebox(
-                title="Error",
-                message=f"Failed to load repositories: {str(e)}",
-                icon="cancel"
-            )
+            self._repo_loading = False
+            # Remove the blocking CTkMessagebox here too
+            self.logger.error(f"Repository refresh failed: {str(e)}")
+
+    def _cancel_repo_loading(self):
+        """Cancel repository loading operation."""
+        self.logger.info("User cancelled repository loading")
+        
+        # Reset loading state
+        self._repo_loading = False
+        
+        # Reset UI
+        self.repo_dropdown.configure(state="normal")
+        self.repo_dropdown.set("Select Repository...")
+        
+        # Reset refresh button
+        refresh_button = None
+        for widget in self.repo_dropdown.master.winfo_children():
+            if isinstance(widget, ctk.CTkButton) and widget.cget("text") == "Cancel":
+                refresh_button = widget
+                break
+        
+        if refresh_button:
+            refresh_button.configure(text="Refresh", command=self._refresh_repositories)
 
     def _update_repository_list(self, repo_names: list):
         """Update repository dropdown with new list."""
+        # Reset loading state
+        self._repo_loading = False
+        
+        # Update UI
         self.repo_dropdown.configure(values=repo_names, state="normal")
         self.repo_dropdown.set("Select Repository...")
+        
+        # Reset refresh button
+        refresh_button = None
+        for widget in self.repo_dropdown.master.winfo_children():
+            if isinstance(widget, ctk.CTkButton) and widget.cget("text") == "Cancel":
+                refresh_button = widget
+                break
+        
+        if refresh_button:
+            refresh_button.configure(text="Refresh", command=self._refresh_repositories)
 
     def _handle_repository_error(self, error_message: str):
         """Handle repository loading error."""
+        # Reset loading state
+        self._repo_loading = False
+        
+        # Reset UI
         self.repo_dropdown.configure(state="normal")
         self.repo_dropdown.set("Select Repository...")
+        
+        # Reset refresh button
+        refresh_button = None
+        for widget in self.repo_dropdown.master.winfo_children():
+            if isinstance(widget, ctk.CTkButton) and widget.cget("text") == "Cancel":
+                refresh_button = widget
+                break
+        
+        if refresh_button:
+            refresh_button.configure(text="Refresh", command=self._refresh_repositories)
+        
+        # Show error
         CTkMessagebox(
             title="Error",
             message=f"Failed to load repositories: {error_message}",
@@ -575,36 +716,78 @@ class MainWindow(ctk.CTk):
             return
 
         self.current_repo = repo_name
+        self.logger.info(f"Repository selected: {repo_name}")
         
-        # Initialize commit browser in background to avoid blocking UI
-        def init_browser():
-            try:
-                self.after(0, self._initialize_commit_browser)
-            except Exception as e:
-                self.logger.error(f"Error initializing commit browser: {e}")
+        # Show immediate feedback to user
+        self._show_repository_loading_state()
         
-        # Schedule on next event loop iteration
-        self.after(10, init_browser)
+        # Initialize commit browser immediately - no delay needed
+        try:
+            self._initialize_commit_browser_async()
+        except Exception as e:
+            self.logger.error(f"Error initializing commit browser: {e}")
+            self._show_commit_browser_error(str(e))
 
-    def _initialize_commit_browser(self):
-        """Initialize commit browser for selected repository."""
+    def _show_repository_loading_state(self):
+        """Show loading state immediately when repository is selected."""
+        # Clear existing content
+        self._clear_commit_browser()
+        
+        # Show loading message
+        loading_label = ctk.CTkLabel(
+            self.github_main_area,
+            text=f"Loading commits for {self.current_repo}...\nPlease wait, this may take a moment.",
+            font=ctk.CTkFont(size=14, slant="italic"),
+            text_color="blue"
+        )
+        loading_label.grid(row=0, column=0, padx=20, pady=20)
+        
+        # Force UI update
+        self.update_idletasks()
+
+    def _initialize_commit_browser_async(self):
+        """Initialize commit browser for selected repository asynchronously."""
         if not self.current_repo or not self.github_client:
             return
 
-        # Clear existing commit browser and placeholder
-        self._clear_commit_browser()
+        try:
+            self.logger.info(f"Initializing commit browser for {self.current_repo}")
+            
+            # Clear existing commit browser and placeholder
+            self._clear_commit_browser()
 
-        # Create new commit browser
-        self.commit_browser = CommitBrowser(
-            self.github_main_area,
-            self.github_client,
-            self.current_repo,
-            self.database,
-            self._on_commits_selected
-        )
+            # Create new commit browser (this will start loading commits automatically)
+            self.commit_browser = CommitBrowser(
+                self.github_main_area,
+                self.github_client,
+                self.current_repo,
+                self.database,
+                self._on_commits_selected
+            )
+            
+            # Pack the commit browser to make it visible
+            self.commit_browser.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            
+            self.logger.info("Commit browser initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing commit browser: {e}")
+            # Show error message to user
+            self._show_commit_browser_error(str(e))
+
+    def _show_commit_browser_error(self, error_message: str):
+        """Show error message when commit browser fails to initialize."""
+        # Clear existing content
+        self._clear_commit_browser()
         
-        # Pack the commit browser to make it visible
-        self.commit_browser.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        # Show error message
+        error_label = ctk.CTkLabel(
+            self.github_main_area,
+            text=f"Error loading repository: {error_message}\n\nPlease try selecting the repository again.",
+            font=ctk.CTkFont(size=14, slant="italic"),
+            text_color="red"
+        )
+        error_label.grid(row=0, column=0, padx=20, pady=20)
 
     def _clear_commit_browser(self):
         """Clear commit browser and any placeholder content."""
@@ -627,8 +810,13 @@ class MainWindow(ctk.CTk):
         
         # Initialize blog editor if commits are selected and AI is configured
         if commits and self.current_repo:
-            working_providers = self.ai_manager.get_working_providers()
-            if working_providers:
+            # Check if any providers are configured (don't test connections)
+            configured_providers = []
+            for name, provider in self.ai_manager.get_all_providers().items():
+                if provider.is_configured():
+                    configured_providers.append(name)
+            
+            if configured_providers:
                 self._initialize_blog_editor()
             else:
                 # Show updated placeholder with current status
@@ -673,18 +861,16 @@ class MainWindow(ctk.CTk):
         )
         commits_label.grid(row=2, column=0, padx=20, pady=2, sticky="w")
         
-        # Check AI provider status
-        working_providers = self.ai_manager.get_working_providers()
-        configured_providers = self.ai_manager.get_configured_providers()
+        # Check AI provider status (don't test connections)
+        configured_providers = []
+        for name, provider in self.ai_manager.get_all_providers().items():
+            if provider.is_configured():
+                configured_providers.append(name)
         
-        if working_providers:
-            ai_status = "✓"
-            ai_color = "green"
-            ai_text = f"✓ AI Provider configured: {working_providers[0]}"
-        elif configured_providers:
-            ai_status = "⚠"
-            ai_color = "orange"
-            ai_text = f"⚠ AI Provider configured but not working: {configured_providers[0]}"
+        if configured_providers:
+            ai_status = "?"
+            ai_color = "blue"
+            ai_text = f"? AI Provider configured: {configured_providers[0]} (click AI Configuration to test)"
         else:
             ai_status = "✗"
             ai_color = "red"
@@ -701,10 +887,8 @@ class MainWindow(ctk.CTk):
         # Instructions
         if not self.selected_commits:
             instruction_text = "1. Go to the GitHub tab\n2. Login and select a repository\n3. Select commits to generate blog entries from"
-        elif not working_providers and not configured_providers:
+        elif not configured_providers:
             instruction_text = "1. Go to the AI Configuration tab\n2. Configure at least one AI provider\n3. Return here to generate blog entries"
-        elif configured_providers and not working_providers:
-            instruction_text = "1. Go to the AI Configuration tab\n2. Check your AI provider configuration\n3. Test the connection to ensure it's working"
         else:
             instruction_text = "All requirements met! The blog editor should appear automatically."
         
@@ -940,10 +1124,13 @@ class MainWindow(ctk.CTk):
 
     def _update_blog_tab_status(self):
         """Update blog tab status and content based on current state."""
-        # Check if both requirements are met
-        working_providers = self.ai_manager.get_working_providers()
+        # Check if both requirements are met (don't test connections)
+        configured_providers = []
+        for name, provider in self.ai_manager.get_all_providers().items():
+            if provider.is_configured():
+                configured_providers.append(name)
         
-        if self.selected_commits and self.current_repo and working_providers:
+        if self.selected_commits and self.current_repo and configured_providers:
             # All requirements met - initialize blog editor
             self._initialize_blog_editor()
         else:
@@ -952,8 +1139,8 @@ class MainWindow(ctk.CTk):
 
     def _on_ai_config_changed(self):
         """Handle AI configuration changes."""
-        # Update AI status
-        self._update_ai_status()
+        # Don't update AI status automatically - it blocks the GUI
+        # User can test connections manually in AI Configuration tab
         
         # Update blog tab status
         self._update_blog_tab_status()

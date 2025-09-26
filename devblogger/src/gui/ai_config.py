@@ -484,44 +484,65 @@ class AIConfigurationPanel(ctk.CTkFrame):
                 self.ollama_temperature.delete(0, "end")
                 self.ollama_temperature.insert(0, str(ollama_config.get("temperature", 0.7)))
 
-            # Load available Ollama models
-            self._refresh_ollama_models()
-
-            # Update status
-            self._refresh_status()
+            # DON'T auto-refresh Ollama models or status - only when user clicks
+            # Set initial status without testing
+            self._set_initial_status()
 
         except Exception as e:
             self.logger.error(f"Error loading provider configs: {e}")
 
-    def _refresh_status(self):
-        """Refresh provider status information."""
+    def _set_initial_status(self):
+        """Set initial status without testing connections."""
         try:
-            # Get status summary
-            status = self.ai_manager.get_provider_status_summary()
+            # Just check if providers are configured, don't test connections
+            providers = list(self.ai_manager.get_all_providers().keys())
+            self.active_provider_dropdown.configure(values=providers)
+            
+            # Set basic status based on configuration only
+            configured_count = 0
+            
+            # Check ChatGPT
+            if self.chatgpt_api_key.get():
+                self.chatgpt_status.configure(text="✓ Configured", text_color="blue")
+                configured_count += 1
+            else:
+                self.chatgpt_status.configure(text="✗ Not configured", text_color="red")
+            
+            # Check Gemini
+            if self.gemini_api_key.get():
+                self.gemini_status.configure(text="✓ Configured", text_color="blue")
+                configured_count += 1
+            else:
+                self.gemini_status.configure(text="✗ Not configured", text_color="red")
+            
+            # Check Ollama
+            if self.ollama_url.get() and self.ollama_model.get():
+                self.ollama_status.configure(text="✓ Configured", text_color="blue")
+                configured_count += 1
+            else:
+                self.ollama_status.configure(text="✗ Not configured", text_color="red")
+            
+            # Update summary
+            self.status_label.configure(text=f"{configured_count}/3 configured (click 'Refresh Status' to test)")
+            
+            # Set Ollama models status
+            self.ollama_models_label.configure(text="Available models: Click ↻ to refresh")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting initial status: {e}")
 
-            # Update status label
-            configured = status["configured_providers"]
-            working = status["working_providers"]
-            total = status["total_providers"]
-
-            self.status_label.configure(
-                text=f"{configured}/{total} configured, {working} working"
-            )
-
+    def _refresh_status(self):
+        """Refresh provider status information by testing connections."""
+        try:
             # Update active provider dropdown
             providers = list(self.ai_manager.get_all_providers().keys())
             self.active_provider_dropdown.configure(values=providers)
 
-            # Set current active provider - prefer working providers
-            working_providers = self.ai_manager.get_working_providers()
+            # Set current active provider - prefer configured providers (don't test)
             configured_providers = self.ai_manager.get_configured_providers()
             
-            if working_providers:
-                # Auto-select the first working provider
-                self.active_provider_var.set(working_providers[0])
-                self.ai_manager.set_active_provider(working_providers[0])
-            elif configured_providers:
-                # Fall back to first configured provider
+            if configured_providers:
+                # Auto-select the first configured provider
                 self.active_provider_var.set(configured_providers[0])
                 self.ai_manager.set_active_provider(configured_providers[0])
             else:
@@ -530,10 +551,16 @@ class AIConfigurationPanel(ctk.CTkFrame):
                 if active:
                     self.active_provider_var.set(active.name)
 
-            # Update individual provider status
+            # Update individual provider status by testing connections
             self._update_provider_status("chatgpt", self.chatgpt_status)
             self._update_provider_status("gemini", self.gemini_status)
             self._update_provider_status("ollama", self.ollama_status)
+            
+            # Update status label after testing
+            configured_count = len(configured_providers)
+            self.status_label.configure(
+                text=f"{configured_count}/3 configured (testing connections...)"
+            )
 
         except Exception as e:
             self.logger.error(f"Error refreshing status: {e}")
@@ -576,14 +603,28 @@ class AIConfigurationPanel(ctk.CTkFrame):
             try:
                 provider = self.ai_manager.get_provider(provider_name)
                 if provider and provider.test_connection():
-                    self.after(0, lambda: self._update_test_result(status_label, "✓ Working", "green"))
+                    # Schedule UI update on main thread
+                    def update_success():
+                        if hasattr(self, 'test_in_progress'):  # Check if widget still exists
+                            self._update_test_result(status_label, "✓ Working", "green")
+                    self.after(0, update_success)
                 else:
-                    self.after(0, lambda: self._update_test_result(status_label, "✗ Not working", "red"))
+                    def update_failure():
+                        if hasattr(self, 'test_in_progress'):  # Check if widget still exists
+                            self._update_test_result(status_label, "✗ Not working", "red")
+                    self.after(0, update_failure)
             except Exception as e:
                 self.logger.error(f"Error testing {provider_name}: {e}")
-                self.after(0, lambda: self._update_test_result(status_label, "✗ Error", "red"))
+                def update_error():
+                    if hasattr(self, 'test_in_progress'):  # Check if widget still exists
+                        self._update_test_result(status_label, "✗ Error", "red")
+                self.after(0, update_error)
             finally:
-                self.after(0, lambda: setattr(self, 'test_in_progress', False))
+                # Always reset the flag
+                def reset_flag():
+                    if hasattr(self, 'test_in_progress'):  # Check if widget still exists
+                        self.test_in_progress = False
+                self.after(0, reset_flag)
 
         import threading
         threading.Thread(target=test_thread, daemon=True).start()
