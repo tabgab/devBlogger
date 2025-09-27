@@ -48,7 +48,8 @@ class CommitBrowser(ctk.CTkFrame):
         github_client: GitHubClient,
         repository: str,
         database: DatabaseManager,
-        on_commits_selected: Callable[[List[GitHubCommit]], None]
+        on_commits_selected: Callable[[List[GitHubCommit]], None],
+        on_busy_state_change: Optional[Callable[[bool, str], None]] = None
     ):
         """Initialize commit browser."""
         super().__init__(parent)
@@ -57,6 +58,7 @@ class CommitBrowser(ctk.CTkFrame):
         self.repository = repository
         self.database = database
         self.on_commits_selected = on_commits_selected
+        self.on_busy_change = on_busy_state_change
         self.logger = logging.getLogger(__name__)
 
         # State
@@ -80,6 +82,8 @@ class CommitBrowser(ctk.CTkFrame):
         self.refresh_button: Optional[ctk.CTkButton] = None
         self.select_all_message_cb: Optional[ctk.CTkCheckBox] = None
         self.select_all_comments_cb: Optional[ctk.CTkCheckBox] = None
+        # Cache processed status to avoid repeated DB reads across filter changes
+        self._processed_cache: Dict[str, Dict[str, bool]] = {}
 
         # Setup UI
         self._setup_ui()
@@ -304,6 +308,8 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _load_commits(self):
         """Load commits from GitHub with smart loading and user confirmation."""
+        # Notify global UI that heavy work is starting
+        self._notify_busy(True, "Loading commits from GitHub...")
         def load_commits_thread():
             try:
                 self.logger.info(f"Loading commits for {self.repository}")
@@ -360,6 +366,8 @@ class CommitBrowser(ctk.CTkFrame):
                 def update_commits():
                     self.all_commits = all_commits
                     self.logger.info(f"Loaded {len(all_commits)} commits")
+                    # Inform global UI we are now indexing/rendering
+                    self._notify_busy(True, "Indexing and rendering commits...")
                     self._apply_filters()
 
                 self.after(0, update_commits)
@@ -668,6 +676,8 @@ class CommitBrowser(ctk.CTkFrame):
 
         # Show immediate feedback
         self.count_label.configure(text=f"Loading {len(self.filtered_commits)} commits...")
+        # Notify parent: checking processed status in background
+        self._notify_busy(True, "Checking processed status...")
         
         # Do ALL heavy work in background thread to keep UI completely responsive
         def load_commits_background():
@@ -685,13 +695,12 @@ class CommitBrowser(ctk.CTkFrame):
         # Start background thread immediately
         threading.Thread(target=load_commits_background, daemon=True).start()
     def _populate_commit_list_fast(self, processed_commits: Dict[str, Dict[str, bool]]):
-        """Populate commit list with minimal UI interruptions."""
-        # Build rows with checkboxes at the front and text label after them
-        for i, commit in enumerate(self.filtered_commits):
-            self._create_row(i, commit, processed_commits.get(commit.sha, {'message': False, 'comments': False}))
-
-        # Update final count
-        self.count_label.configure(text=f"{len(self.filtered_commits)} commits")
+        """Populate commit list progressively to keep UI responsive."""
+        # Notify global UI that we are rendering rows
+        self._notify_busy(True, "Rendering commit list...")
+        self.count_label.configure(text=f"Rendering {len(self.filtered_commits)} commits...")
+        # Start progressive rendering
+        self._add_rows_progressively(0, processed_commits)
 
         # Update global checkbox states based on actual commit status
         self._update_global_checkbox_states(processed_commits)
@@ -730,81 +739,71 @@ class CommitBrowser(ctk.CTkFrame):
             self.select_all_comments_var.set(False)
 
     def _batch_check_processed_commits(self, commits: List[GitHubCommit]) -> Dict[str, Dict[str, bool]]:
-        """Batch check which commits have been processed to reduce database calls."""
-        processed_status = {}
-        
+        """Batch check which commits have been processed to reduce database calls, with caching."""
+        processed_status: Dict[str, Dict[str, bool]] = {}
+
         try:
-            # Check all commits at once if database supports batch operations
             for commit in commits:
-                processed_status[commit.sha] = {
-                    'message': self.database.is_commit_processed(self.repository, commit.sha, "message"),
-                    'comments': self.database.is_commit_processed(self.repository, commit.sha, "comments")
-                }
+                sha = commit.sha
+                cache_entry = self._processed_cache.get(sha, {})
+                msg_known = "message" in cache_entry
+                com_known = "comments" in cache_entry
+
+                msg = cache_entry.get("message", False)
+                com = cache_entry.get("comments", False)
+
+                # Only hit DB for unknowns
+                if not msg_known:
+                    try:
+                        msg = self.database.is_commit_processed(self.repository, sha, "message")
+                    except Exception:
+                        msg = False
+                if not com_known:
+                    try:
+                        com = self.database.is_commit_processed(self.repository, sha, "comments")
+                    except Exception:
+                        com = False
+
+                # Update cache and result
+                cache_entry = self._processed_cache.setdefault(sha, {})
+                cache_entry["message"] = msg
+                cache_entry["comments"] = com
+
+                processed_status[sha] = {"message": msg, "comments": com}
+
         except Exception as e:
             self.logger.error(f"Error batch checking processed commits: {e}")
-            # Fallback to empty status
+            # Fallback to empty status (do not wipe cache)
             for commit in commits:
-                processed_status[commit.sha] = {'message': False, 'comments': False}
-        
+                sha = commit.sha
+                processed_status[sha] = {
+                    "message": self._processed_cache.get(sha, {}).get("message", False),
+                    "comments": self._processed_cache.get(sha, {}).get("comments", False),
+                }
+
         return processed_status
 
     def _add_commits_progressively(self, start_index: int, processed_commits: Dict[str, Dict[str, bool]]):
-        """Add commits to the list progressively to prevent UI freezing."""
-        batch_size = 25  # Larger batches, fewer interruptions
+        """Legacy progressive adder (unused)."""
+        # Kept for backward compatibility; new code uses _add_rows_progressively.
+        self._add_rows_progressively(start_index, processed_commits)
+
+    def _add_rows_progressively(self, start_index: int, processed_commits: Dict[str, Dict[str, bool]]):
+        """Add rows progressively (checkboxes + label) to keep UI snappy."""
+        batch_size = 20
         end_index = min(start_index + batch_size, len(self.filtered_commits))
-        
-        # Add this batch of commits
+
         for i in range(start_index, end_index):
             commit = self.filtered_commits[i]
-            
-            # Create display text
-            display_text = self._format_commit_display(commit)
+            status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
+            self._create_row(i, commit, status)
 
-            # Add to listbox
-            self.commit_listbox.insert(i, display_text)
-
-            # Create frame for checkboxes
-            checkbox_frame = ctk.CTkFrame(self.commit_listbox, fg_color="transparent")
-            checkbox_frame.grid(row=i, column=1, sticky="w", padx=(10, 0))
-
-            # Message checkbox
-            message_cb = ctk.CTkCheckBox(
-                checkbox_frame,
-                text="",
-                width=20,
-                command=lambda c=commit: self._on_message_checkbox_changed(c)
-            )
-            message_cb.grid(row=0, column=0, padx=(0, 5))
-            self.commit_message_checkboxes[commit.sha] = message_cb
-
-            # Comments checkbox
-            comments_cb = ctk.CTkCheckBox(
-                checkbox_frame,
-                text="",
-                width=20,
-                command=lambda c=commit: self._on_comments_checkbox_changed(c)
-            )
-            comments_cb.grid(row=0, column=1)
-            self.commit_comments_checkboxes[commit.sha] = comments_cb
-
-            # Set checkbox states based on processed status
-            processed_status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
-            if processed_status['message']:
-                message_cb.select()
-            if processed_status['comments']:
-                comments_cb.select()
-
-        # Continue with next batch if there are more commits
+        # Update progress and schedule next batch
         if end_index < len(self.filtered_commits):
-            # Update progress less frequently and schedule next batch with longer delay
-            if end_index % 50 == 0:  # Update progress every 50 commits only
-                progress = f"{end_index}/{len(self.filtered_commits)} commits loaded"
-                self.count_label.configure(text=progress)
-            
-            # Much longer delay to avoid blocking GUI interactions
-            self.after(200, lambda: self._add_commits_progressively(end_index, processed_commits))
+            if end_index % 50 == 0:
+                self.count_label.configure(text=f"{end_index}/{len(self.filtered_commits)} commits rendered")
+            self.after(25, lambda: self._add_rows_progressively(end_index, processed_commits))
         else:
-            # All commits loaded, finalize
             self._finalize_commit_list()
 
     def _finalize_commit_list(self):
@@ -815,6 +814,9 @@ class CommitBrowser(ctk.CTkFrame):
         # Set initial preview if commits exist
         if self.filtered_commits:
             self._update_preview(self.filtered_commits[0])
+
+        # Done rendering, clear global busy
+        self._notify_busy(False, "")
 
     def _format_commit_display(self, commit: GitHubCommit) -> str:
         """Format commit for display in list."""
@@ -1109,10 +1111,13 @@ class CommitBrowser(ctk.CTkFrame):
                         self.database.mark_commit_processed(self.repository, commit.sha, "message")
                     else:
                         self.database.mark_commit_unprocessed(self.repository, commit.sha, "message")
-                        # Check if we should remove from selection
-                        message_selected = self.database.is_commit_processed(self.repository, commit.sha, "message")
-                        comments_selected = self.database.is_commit_processed(self.repository, commit.sha, "comments")
-                        if not message_selected and not comments_selected:
+                        # Update cache and selection without extra DB reads
+                        try:
+                            self._processed_cache.setdefault(commit.sha, {})["message"] = False
+                            other_selected = self._processed_cache.get(commit.sha, {}).get("comments", False)
+                        except Exception:
+                            other_selected = False
+                        if not other_selected:
                             # Schedule removal on main thread
                             def remove_commit():
                                 if commit in self.selected_commits:
@@ -1174,10 +1179,13 @@ class CommitBrowser(ctk.CTkFrame):
                         self.database.mark_commit_processed(self.repository, commit.sha, "comments")
                     else:
                         self.database.mark_commit_unprocessed(self.repository, commit.sha, "comments")
-                        # Check if we should remove from selection
-                        message_selected = self.database.is_commit_processed(self.repository, commit.sha, "message")
-                        comments_selected = self.database.is_commit_processed(self.repository, commit.sha, "comments")
-                        if not message_selected and not comments_selected:
+                        # Update cache and selection without extra DB reads
+                        try:
+                            self._processed_cache.setdefault(commit.sha, {})["comments"] = False
+                            other_selected = self._processed_cache.get(commit.sha, {}).get("message", False)
+                        except Exception:
+                            other_selected = False
+                        if not other_selected:
                             # Schedule removal on main thread
                             def remove_commit():
                                 if commit in self.selected_commits:
@@ -1307,6 +1315,11 @@ class CommitBrowser(ctk.CTkFrame):
                     self.database.mark_commit_processed(self.repository, commit.sha, "message")
                 else:
                     self.database.mark_commit_unprocessed(self.repository, commit.sha, "message")
+                # Update cache
+                try:
+                    self._processed_cache.setdefault(commit.sha, {})["message"] = message_selected
+                except Exception:
+                    pass
 
                 # Update selected commits in memory
                 if message_selected or comments_selected:
@@ -1349,6 +1362,11 @@ class CommitBrowser(ctk.CTkFrame):
                     self.database.mark_commit_processed(self.repository, commit.sha, "comments")
                 else:
                     self.database.mark_commit_unprocessed(self.repository, commit.sha, "comments")
+                # Update cache
+                try:
+                    self._processed_cache.setdefault(commit.sha, {})["comments"] = comments_selected
+                except Exception:
+                    pass
 
                 if message_selected or comments_selected:
                     if commit not in self.selected_commits:
@@ -1390,8 +1408,19 @@ class CommitBrowser(ctk.CTkFrame):
                 self.busy_progress.stop()
                 self.busy_label.grid_remove()
                 self.busy_progress.grid_remove()
+            # Notify parent/main window about busy state (for global banner)
+            self._notify_busy(busy, text)
         except Exception as e:
             self.logger.error(f"Error toggling busy state: {e}")
+
+    def _notify_busy(self, busy: bool, text: str = "Working..."):
+        """Notify parent window of busy state to show/hide a global banner."""
+        try:
+            if hasattr(self, "on_busy_change") and self.on_busy_change:
+                # Ensure call on UI thread
+                self.after(0, lambda b=busy, t=text: self.on_busy_change(b, t))
+        except Exception:
+            pass
 
     def _update_display_status(self, processed_commits: Dict[str, Dict[str, bool]]):
         """Update the display with current processing status."""

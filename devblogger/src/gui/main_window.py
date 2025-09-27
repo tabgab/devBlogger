@@ -1121,6 +1121,27 @@ class MainWindow(ctk.CTk):
         # Force UI update
         self.update_idletasks()
 
+    def _on_commit_browser_busy(self, busy: bool, text: str):
+        """Show/hide global non-blocking banner while commit browser does heavy work."""
+        try:
+            if not hasattr(self, "global_status_frame"):
+                return
+            if busy:
+                # Update banner message and show
+                msg = f"Working on repository... {text}" if text else "Working on repository..."
+                self.global_status_label.configure(text=msg)
+                self.global_status_frame.grid()
+                self.global_status_frame.tkraise()
+                if hasattr(self, "global_status_progress"):
+                    self.global_status_progress.start()
+            else:
+                # Stop progress and hide after a short delay to avoid flicker
+                if hasattr(self, "global_status_progress"):
+                    self.global_status_progress.stop()
+                self.after(300, lambda: self.global_status_frame.grid_remove())
+        except Exception:
+            pass
+
     def _initialize_commit_browser_async(self):
         """Initialize commit browser for selected repository asynchronously."""
         if not self.current_repo or not self.github_client:
@@ -1138,7 +1159,8 @@ class MainWindow(ctk.CTk):
                 self.github_client,
                 self.current_repo,
                 self.database,
-                self._on_commits_selected
+                self._on_commits_selected,
+                on_busy_state_change=self._on_commit_browser_busy
             )
             
             # Pack the commit browser to make it visible
