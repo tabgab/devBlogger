@@ -5,6 +5,7 @@ DevBlogger - Commit Browser Component
 
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Callable
 import customtkinter as ctk
@@ -77,6 +78,8 @@ class CommitBrowser(ctk.CTkFrame):
         self.commit_listbox: Optional[CTkListbox] = None
         self.preview_text: Optional[tk.Text] = None
         self.load_button: Optional[ctk.CTkButton] = None
+        # Reusable font for row widgets to avoid per-row font construction cost
+        self._row_font = ctk.CTkFont(size=11)
 
         # Busy state (DB operations)
         self.db_busy: bool = False
@@ -710,6 +713,11 @@ class CommitBrowser(ctk.CTkFrame):
         threading.Thread(target=load_commits_background, daemon=True).start()
     def _populate_commit_list_fast(self, processed_commits: Dict[str, Dict[str, bool]]):
         """Populate commit list progressively to keep UI responsive."""
+        # Start render profiling
+        try:
+            self._render_start_time = time.perf_counter()
+        except Exception:
+            pass
         # Notify global UI that we are rendering rows
         self._notify_busy(True, "Rendering commit list...")
         self.count_label.configure(text=f"Rendering {len(self.filtered_commits)} commits...")
@@ -719,9 +727,7 @@ class CommitBrowser(ctk.CTkFrame):
         # Update global checkbox states based on actual commit status
         self._update_global_checkbox_states(processed_commits)
 
-        # Set initial preview if commits exist
-        if self.filtered_commits:
-            self._update_preview(self.filtered_commits[0])
+        # Initial preview deferred to finalize to reduce work during progressive render
 
     def _update_global_checkbox_states(self, processed_commits: Dict[str, Dict[str, bool]]):
         """Update global checkbox states based on actual commit processing status."""
@@ -804,7 +810,8 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _add_rows_progressively(self, start_index: int, processed_commits: Dict[str, Dict[str, bool]]):
         """Add rows progressively (checkboxes + label) to keep UI snappy."""
-        batch_size = 20
+        # Use small batch size and a tiny timeout to interleave with user input events
+        batch_size = 6
         end_index = min(start_index + batch_size, len(self.filtered_commits))
 
         for i in range(start_index, end_index):
@@ -812,11 +819,18 @@ class CommitBrowser(ctk.CTkFrame):
             status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
             self._create_row(i, commit, status)
 
+        # Process pending UI events right after each batch so clicks are handled
+        try:
+            self.update()
+        except Exception:
+            pass
+
         # Update progress and schedule next batch
         if end_index < len(self.filtered_commits):
-            if end_index % 50 == 0:
+            if end_index % 25 == 0:
                 self.count_label.configure(text=f"{end_index}/{len(self.filtered_commits)} commits rendered")
-            self.after(25, lambda: self._add_rows_progressively(end_index, processed_commits))
+            # Interleave with user events explicitly using a tiny delay
+            self.after(10, lambda: self._add_rows_progressively(end_index, processed_commits))
         else:
             self._finalize_commit_list()
 
@@ -830,10 +844,18 @@ class CommitBrowser(ctk.CTkFrame):
             self._update_preview(self.filtered_commits[0])
 
         # Done rendering, clear global busy
+        try:
+            if hasattr(self, "_render_start_time"):
+                elapsed = time.perf_counter() - self._render_start_time
+                rows = len(self.filtered_commits)
+                rps = (rows / elapsed) if elapsed > 0 else rows
+                self.logger.info(f"[PROFILE] Commit list rendered: {rows} rows in {elapsed:.2f}s ({rps:.1f} rows/s)")
+        except Exception:
+            pass
         self._notify_busy(False, "")
 
     def _format_commit_display(self, commit: GitHubCommit) -> str:
-        """Format commit for display in list."""
+        """Format commit for display in list (non-blocking; no DB calls)."""
         # Short SHA
         short_sha = commit.sha[:8]
 
@@ -850,8 +872,9 @@ class CommitBrowser(ctk.CTkFrame):
         # Format date
         date_str = commit.date.strftime("%m/%d %H:%M") if commit.date else "Unknown"
 
-        # Check if processed
-        processed = self.database.is_commit_processed(self.repository, commit.sha)
+        # Determine processed state from cache only to avoid UI-thread DB I/O
+        cache = self._processed_cache.get(commit.sha, {})
+        processed = bool(cache.get("message") or cache.get("comments"))
         status = "✓" if processed else " "
 
         return f"{status} {short_sha} | {author_name} | {date_str} | {message}"
@@ -1115,6 +1138,7 @@ class CommitBrowser(ctk.CTkFrame):
             try:
                 self.logger.info(f"Background thread: Processing {len(self.filtered_commits)} commits for messages")
                 
+                to_remove: List[GitHubCommit] = []
                 for commit in self.filtered_commits:
                     if select_all:
                         self.database.mark_commit_processed(self.repository, commit.sha, "message")
@@ -1127,18 +1151,21 @@ class CommitBrowser(ctk.CTkFrame):
                         except Exception:
                             other_selected = False
                         if not other_selected:
-                            # Schedule removal on main thread
-                            def remove_commit():
-                                if commit in self.selected_commits:
-                                    self.selected_commits.remove(commit)
-                                self.on_commits_selected(self.selected_commits)
-                            self.after(0, remove_commit)
+                            to_remove.append(commit)
                 
                 self.logger.info("Background thread: Database operations completed for messages")
-                # Don't refresh display - it's too expensive and not necessary
-
-                # Exit busy on UI thread
-                self.after(0, lambda: self._set_busy(False))
+                # Apply removals once on UI thread
+                def apply_removals():
+                    try:
+                        for c in to_remove:
+                            if c in self.selected_commits:
+                                self.selected_commits.remove(c)
+                        self.on_commits_selected(self.selected_commits)
+                    except Exception:
+                        pass
+                    finally:
+                        self._set_busy(False)
+                self.after(0, apply_removals)
                 
             except Exception as e:
                 self.logger.error(f"Error updating database for messages: {e}")
@@ -1183,6 +1210,7 @@ class CommitBrowser(ctk.CTkFrame):
             try:
                 self.logger.info(f"Background thread: Processing {len(self.filtered_commits)} commits for comments")
                 
+                to_remove: List[GitHubCommit] = []
                 for commit in self.filtered_commits:
                     if select_all:
                         self.database.mark_commit_processed(self.repository, commit.sha, "comments")
@@ -1195,18 +1223,21 @@ class CommitBrowser(ctk.CTkFrame):
                         except Exception:
                             other_selected = False
                         if not other_selected:
-                            # Schedule removal on main thread
-                            def remove_commit():
-                                if commit in self.selected_commits:
-                                    self.selected_commits.remove(commit)
-                                self.on_commits_selected(self.selected_commits)
-                            self.after(0, remove_commit)
+                            to_remove.append(commit)
                 
                 self.logger.info("Background thread: Database operations completed for comments")
-                # Don't refresh display - it's too expensive and not necessary
-
-                # Exit busy on UI thread
-                self.after(0, lambda: self._set_busy(False))
+                # Apply removals once on UI thread
+                def apply_removals():
+                    try:
+                        for c in to_remove:
+                            if c in self.selected_commits:
+                                self.selected_commits.remove(c)
+                        self.on_commits_selected(self.selected_commits)
+                    except Exception:
+                        pass
+                    finally:
+                        self._set_busy(False)
+                self.after(0, apply_removals)
                 
             except Exception as e:
                 self.logger.error(f"Error updating database for comments: {e}")
@@ -1247,6 +1278,7 @@ class CommitBrowser(ctk.CTkFrame):
                 row_frame,
                 text="M",
                 width=24,
+                font=self._row_font,
                 command=_mk_msg_cb(commit)
             )
             msg_cb.grid(row=0, column=0, padx=(6, 6), pady=2, sticky="w")
@@ -1259,6 +1291,7 @@ class CommitBrowser(ctk.CTkFrame):
                 row_frame,
                 text="C",
                 width=24,
+                font=self._row_font,
                 command=_mk_com_cb(commit)
             )
             com_cb.grid(row=0, column=1, padx=(0, 8), pady=2, sticky="w")
@@ -1270,7 +1303,7 @@ class CommitBrowser(ctk.CTkFrame):
                 text=display_text,
                 anchor="w",
                 justify="left",
-                font=ctk.CTkFont(size=11)
+                font=self._row_font
             )
             text_label.grid(row=0, column=2, sticky="ew")
 

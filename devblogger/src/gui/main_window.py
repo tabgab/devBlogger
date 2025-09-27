@@ -99,6 +99,16 @@ class MainWindow(ctk.CTk):
         self._setup_bindings()
         self.logger.info("Bindings setup completed")
 
+        # Start lightweight UI watchdog/profiler (non-blocking)
+        try:
+            self._ui_watchdog_last = None
+            self._ui_watchdog_bad = 0
+            self._ui_watchdog_threshold = 0.12  # 120ms jitter considered heavy UI load
+            self._ui_watchdog_interval = 250    # ms
+            self._start_ui_watchdog()
+        except Exception:
+            pass
+
         # Check authentication status
         self.logger.info("Checking authentication status")
         self._check_auth_status()
@@ -834,6 +844,64 @@ class MainWindow(ctk.CTk):
         except Exception:
             pass
 
+    # Lightweight UI watchdog: measures event-loop jitter and surfaces a non-blocking banner
+    def _start_ui_watchdog(self):
+        try:
+            import time as _t  # local import if needed
+            self._ui_watchdog_last = _t.perf_counter()
+            self.after(self._ui_watchdog_interval, self._ui_watchdog_tick)
+        except Exception:
+            pass
+
+    def _ui_watchdog_tick(self):
+        try:
+            import time as _t
+            now = _t.perf_counter()
+            last = getattr(self, "_ui_watchdog_last", None)
+            interval = max(50, int(getattr(self, "_ui_watchdog_interval", 250)))
+            threshold = float(getattr(self, "_ui_watchdog_threshold", 0.12))  # seconds
+
+            if last is not None:
+                elapsed = now - last
+                expected = interval / 1000.0
+                jitter = max(0.0, elapsed - expected)
+
+                # Track consecutive bad samples
+                if jitter > threshold:
+                    self._ui_watchdog_bad = min(1000, getattr(self, "_ui_watchdog_bad", 0) + 1)
+                else:
+                    self._ui_watchdog_bad = max(0, getattr(self, "_ui_watchdog_bad", 0) - 1)
+
+                # If UI is under load and we are known to be doing work, show a non-blocking banner
+                doing_work = bool(getattr(self, "_repo_loading", False))
+                try:
+                    commit_busy = bool(self.commit_browser and getattr(self.commit_browser, "db_busy", False))
+                except Exception:
+                    commit_busy = False
+
+                if self._ui_watchdog_bad >= 4 and (doing_work or commit_busy):
+                    try:
+                        if hasattr(self, "global_status_frame"):
+                            self.global_status_label.configure(
+                                text="UI is busy completing background work... Please wait."
+                            )
+                            self.global_status_frame.grid()
+                            self.global_status_frame.tkraise()
+                            if hasattr(self, "global_status_progress"):
+                                self.global_status_progress.start()
+                    except Exception:
+                        pass
+
+            self._ui_watchdog_last = now
+            # Reschedule next tick
+            self.after(interval, self._ui_watchdog_tick)
+        except Exception:
+            # Try to reschedule in case of transient errors
+            try:
+                self.after(500, self._ui_watchdog_tick)
+            except Exception:
+                pass
+
     def _on_user_data_available(self):
         """Called when user data becomes available after token exchange."""
         self.logger.info("User data available callback triggered")
@@ -936,6 +1004,17 @@ class MainWindow(ctk.CTk):
         access_token = self.github_auth.get_access_token()
         if not access_token:
             self.logger.warning("Refresh attempted but no access token yet")
+            # Queue refresh and inform the user non-blockingly
+            self._pending_repo_refresh = True
+            try:
+                if hasattr(self, "global_status_frame"):
+                    self.global_status_label.configure(text="Waiting for GitHub access token... Please complete authentication.")
+                    self.global_status_frame.grid()
+                    self.global_status_frame.tkraise()
+                    if hasattr(self, "global_status_progress"):
+                        self.global_status_progress.start()
+            except Exception:
+                pass
             return
         
         if not self.github_client:
