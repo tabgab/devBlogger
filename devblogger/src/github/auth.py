@@ -539,30 +539,92 @@ class GitHubAuth:
             self.logger.error(f"Error showing auth dialog: {e}")
 
     def _stop_callback_server(self):
-        """Stop the callback server."""
-        if self.callback_server:
-            try:
-                self.logger.info("Stopping callback server...")
-                self.callback_server.shutdown()
-                self.callback_server.server_close()
-                self.logger.info("Callback server stopped successfully")
-                
-                # Wait for server thread to finish
-                if self.server_thread and self.server_thread.is_alive():
-                    self.server_thread.join(timeout=2.0)
-                    if self.server_thread.is_alive():
-                        self.logger.warning("Server thread did not stop within timeout")
-                    else:
-                        self.logger.info("Server thread stopped successfully")
-                
+        """Stop the callback server (idempotent and thread-safe)."""
+        try:
+            # Lazily create a lock for server stop operations
+            if not hasattr(self, "_server_lock"):
+                self._server_lock = threading.Lock()  # type: ignore[attr-defined]
+        except Exception:
+            # If we cannot create a lock, proceed without it (best-effort)
+            self._server_lock = None  # type: ignore[attr-defined]
+
+        server = None
+        thread = None
+
+        try:
+            # Atomically take ownership of server references and clear shared attrs
+            if getattr(self, "_server_lock", None) is not None:
+                with self._server_lock:  # type: ignore[attr-defined]
+                    server = self.callback_server
+                    thread = self.server_thread
+                    self.callback_server = None
+                    self.server_thread = None
+            else:
+                # No lock available, best-effort swap
+                server = self.callback_server
+                thread = self.server_thread
                 self.callback_server = None
                 self.server_thread = None
-                
-            except Exception as e:
-                self.logger.error(f"Error stopping callback server: {e}")
-                # Force cleanup
-                self.callback_server = None
-                self.server_thread = None
+
+            if server:
+                # Stop server on a background thread to avoid blocking the GUI
+                def _async_shutdown(srv, th):
+                    try:
+                        try:
+                            srv.shutdown()
+                        except Exception as e:
+                            self.logger.warning(f"Callback server shutdown error (ignored): {e}")
+                        try:
+                            srv.server_close()
+                        except Exception as e:
+                            self.logger.warning(f"Callback server close error (ignored): {e}")
+                        if th and th.is_alive():
+                            # Join in background thread, not on the UI/main thread
+                            th.join(timeout=2.0)
+                            if th.is_alive():
+                                self.logger.warning("Server thread did not stop within timeout")
+                            else:
+                                self.logger.info("Server thread stopped successfully")
+                        self.logger.info("Callback server stopped successfully")
+                    except Exception as e:
+                        self.logger.warning(f"Async server stop encountered error (ignored): {e}")
+                    finally:
+                        # Notify UI thread that the server has fully stopped
+                        try:
+                            on_stopped = getattr(self, "on_server_stopped", None)
+                            ui_after = getattr(self, "ui_after", None)
+                            if callable(on_stopped):
+                                if callable(ui_after):
+                                    ui_after(0, on_stopped)
+                                else:
+                                    # Fallback to default root if available
+                                    import tkinter as tk
+                                    if hasattr(tk, "_default_root") and tk._default_root:
+                                        tk._default_root.after(0, on_stopped)
+                                    else:
+                                        # Last resort, call directly
+                                        on_stopped()
+                            # Clear the callback to avoid duplicate invocations
+                            try:
+                                self.on_server_stopped = None  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                        except Exception as notify_e:
+                            self.logger.warning(f"Could not notify UI of server stop: {notify_e}")
+                try:
+                    threading.Thread(target=_async_shutdown, args=(server, thread), daemon=True).start()
+                except Exception as e:
+                    self.logger.warning(f"Failed to spawn async server shutdown thread: {e}")
+                # Notify UI that server stop was initiated (completion will trigger callback below)
+            else:
+                # Already stopped by another caller
+                self.logger.info("Callback server already stopped (noop)")
+
+        except Exception as e:
+            # Ensure attributes remain cleared even if errors happen
+            self.callback_server = None
+            self.server_thread = None
+            self.logger.error(f"Error stopping callback server (ignored): {e}")
 
     def logout(self):
         """Clear authentication data."""

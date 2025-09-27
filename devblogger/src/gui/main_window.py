@@ -233,6 +233,27 @@ class MainWindow(ctk.CTk):
         # Create tab buttons frame - positioned immediately below header
         self.tab_buttons_frame = ctk.CTkFrame(self.main_container)
         self.tab_buttons_frame.grid(row=1, column=0, padx=0, pady=0, sticky="ew")
+
+        # Global status banner (hidden by default). Non-modal, non-grabbing. Purely informational.
+        self.global_status_frame = ctk.CTkFrame(self.tab_buttons_frame, fg_color=("goldenrod", "goldenrod4"))
+        self.global_status_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        self.global_status_frame.grid_remove()
+
+        self.global_status_label = ctk.CTkLabel(
+            self.global_status_frame,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="black"
+        )
+        self.global_status_label.pack(padx=10, pady=6)
+
+        # Indeterminate progress bar to indicate background work (non-blocking)
+        self.global_status_progress = ctk.CTkProgressBar(
+            self.global_status_frame,
+            mode="indeterminate",
+            width=240
+        )
+        self.global_status_progress.pack(padx=10, pady=(0, 6))
         
         # Create tab content frame - takes up all remaining space
         self.tab_content_frame = ctk.CTkFrame(self.main_container)
@@ -265,7 +286,7 @@ class MainWindow(ctk.CTk):
             command=lambda: self._show_tab("GitHub"),
             width=120
         )
-        github_btn.grid(row=0, column=0, padx=(5, 2), pady=5)
+        github_btn.grid(row=1, column=0, padx=(5, 2), pady=5)
         self.tab_buttons["GitHub"] = github_btn
         
         # AI Configuration tab button
@@ -275,7 +296,7 @@ class MainWindow(ctk.CTk):
             command=lambda: self._show_tab("AI Configuration"),
             width=120
         )
-        ai_btn.grid(row=0, column=1, padx=2, pady=5)
+        ai_btn.grid(row=1, column=1, padx=2, pady=5)
         self.tab_buttons["AI Configuration"] = ai_btn
         
         # Blog Generation tab button
@@ -285,7 +306,7 @@ class MainWindow(ctk.CTk):
             command=lambda: self._show_tab("Blog Generation"),
             width=120
         )
-        blog_btn.grid(row=0, column=2, padx=(2, 5), pady=5)
+        blog_btn.grid(row=1, column=2, padx=(2, 5), pady=5)
         self.tab_buttons["Blog Generation"] = blog_btn
 
     def _create_tab_contents(self):
@@ -528,8 +549,24 @@ class MainWindow(ctk.CTk):
         
         # Reset the auth flag immediately
         self.auth_in_progress = False
-        
-        # Stop the authentication server immediately - we don't need it anymore
+
+        # Track post-auth tasks and wire callbacks
+        self._post_auth_pending = {"server": True, "client": True, "stabilize": True}
+        try:
+            # Ensure UI callbacks from auth use the main window's event loop
+            self.github_auth.ui_after = self.after
+            # Get notified when the server has fully stopped
+            self.github_auth.on_server_stopped = self._on_post_auth_server_stopped
+        except Exception:
+            pass
+
+        # Start stabilization task to keep UI banner until clicks are reliably accepted
+        try:
+            self._start_post_auth_stabilization()
+        except Exception as e:
+            self.logger.warning(f"Could not start post-auth stabilization: {e}")
+
+        # Stop the authentication server immediately (non-blocking)
         if self.github_auth.callback_server:
             self.github_auth._stop_callback_server()
         
@@ -539,6 +576,26 @@ class MainWindow(ctk.CTk):
         # Update UI immediately - this will show "Authenticating..." if user data isn't ready
         self.logger.info("Authentication completed, updating UI immediately")
         self._update_github_status(True)
+
+        # Show non-blocking status banner to inform user about background steps
+        try:
+            if hasattr(self, "global_status_frame"):
+                self.global_status_label.configure(
+                    text=(
+                        "Finalizing GitHub authentication... Please wait.\n"
+                        "Tasks: stopping local callback server, initializing GitHub client, restoring window focus.\n"
+                        "You can continue when this message disappears."
+                    )
+                )
+                self.global_status_frame.grid()
+                # Ensure banner is visible above tab buttons
+                self.global_status_frame.tkraise()
+                # Start non-blocking progress indicator
+                if hasattr(self, "global_status_progress"):
+                    self.global_status_progress.start()
+        except Exception:
+            pass
+
         self._initialize_github_client()
         
         # Restore focus and break potential macOS click-through after auth
@@ -631,6 +688,97 @@ class MainWindow(ctk.CTk):
         except Exception:
             pass
 
+    def _start_post_auth_stabilization(self, max_seconds: int = 25, interval_ms: int = 250, good_required: int = 6, jitter_threshold_s: float = 0.12):
+        """
+        Probe UI event loop responsiveness and finish stabilization as soon as it's responsive.
+        - max_seconds: hard cap to avoid hanging banner
+        - interval_ms: probe interval
+        - good_required: consecutive good probes required to consider UI responsive
+        - jitter_threshold_s: acceptable scheduling jitter over interval
+        """
+        try:
+            # Initialize probe state
+            self._probe_good_required = max(1, good_required)
+            self._probe_good_count = 0
+            self._probe_interval = max(50, interval_ms)
+            self._probe_threshold = max(0.02, jitter_threshold_s)  # at least 20ms
+            self._probe_elapsed_s = 0.0
+            self._probe_max_s = max(1, min(max_seconds, 120))
+            self._probe_status = "measuring UI responsiveness"
+
+            # Schedule periodic probe
+            def _probe_tick():
+                try:
+                    # Stop if stabilization already completed
+                    if not getattr(self, "_post_auth_pending", {}).get("stabilize", False):
+                        return
+
+                    start = time.perf_counter()
+
+                    def _on_probe():
+                        nonlocal start
+                        try:
+                            # Measure jitter against desired interval
+                            actual = time.perf_counter() - start
+                            expected = self._probe_interval / 1000.0
+                            jitter = max(0.0, actual - expected)
+
+                            if jitter <= self._probe_threshold:
+                                self._probe_good_count += 1
+                            else:
+                                # Slight decay on bad sample
+                                self._probe_good_count = max(0, self._probe_good_count - 1)
+
+                            # Update elapsed and status
+                            self._probe_elapsed_s += expected
+                            if self._probe_good_count >= self._probe_good_required:
+                                self._probe_status = "responsive"
+                                # Mark stabilization done
+                                if hasattr(self, "_post_auth_pending"):
+                                    self._post_auth_pending["stabilize"] = False
+                                self._post_auth_check_ready()
+                                return
+                            else:
+                                self._probe_status = f"measuring... jitter {int(jitter*1000)}ms (good {self._probe_good_count}/{self._probe_good_required})"
+
+                            # If exceeded max time, finish anyway
+                            if self._probe_elapsed_s >= self._probe_max_s:
+                                if hasattr(self, "_post_auth_pending"):
+                                    self._post_auth_pending["stabilize"] = False
+                                self._post_auth_check_ready()
+                                return
+
+                            # Nudge window state and sanitize overlays while probing
+                            try:
+                                self._mac_nudge_style()
+                            except Exception:
+                                pass
+                            try:
+                                self._sanitize_toplevels()
+                            except Exception:
+                                pass
+
+                            # Schedule next probe
+                            self.after(self._probe_interval, _probe_tick)
+                            self._post_auth_check_ready()
+                        except Exception as e:
+                            self.logger.warning(f"Probe callback error: {e}")
+
+                    # Schedule probe callback after interval
+                    self.after(self._probe_interval, _on_probe)
+                except Exception as e:
+                    self.logger.warning(f"Probe scheduling error: {e}")
+
+            # Start probing immediately
+            # Ensure stabilize flag is set
+            if hasattr(self, "_post_auth_pending"):
+                self._post_auth_pending["stabilize"] = True
+            self._post_auth_check_ready()
+            _probe_tick()
+
+        except Exception as e:
+            self.logger.warning(f"Failed to start post-auth stabilization: {e}")
+
     def _mac_nudge_style(self):
         """On macOS, normalize window style to ensure clicks are accepted after external focus changes."""
         try:
@@ -674,6 +822,54 @@ class MainWindow(ctk.CTk):
         # Update the GitHub status now that we have user data
         self._update_github_status(True)
 
+    def _on_post_auth_server_stopped(self):
+        """Called when the OAuth callback server has fully stopped (async)."""
+        try:
+            if not hasattr(self, "_post_auth_pending"):
+                self._post_auth_pending = {"server": False, "client": True}
+            else:
+                self._post_auth_pending["server"] = False
+            self._post_auth_check_ready()
+        except Exception as e:
+            self.logger.warning(f"Error handling post-auth server stopped: {e}")
+
+    def _on_post_auth_client_ready(self):
+        """Called when the GitHub client has been initialized on the UI thread."""
+        try:
+            if not hasattr(self, "_post_auth_pending"):
+                self._post_auth_pending = {"server": True, "client": False}
+            else:
+                self._post_auth_pending["client"] = False
+            self._post_auth_check_ready()
+        except Exception as e:
+            self.logger.warning(f"Error handling post-auth client ready: {e}")
+
+    def _post_auth_check_ready(self):
+        """Update banner based on remaining post-auth tasks and hide when all complete."""
+        try:
+            pending = getattr(self, "_post_auth_pending", {"server": False, "client": False, "stabilize": False})
+            remaining = [k for k, v in pending.items() if v]
+            if hasattr(self, "global_status_frame"):
+                if remaining:
+                    tasks_text = ", ".join(remaining)
+                    # Optionally append probe status if available
+                    if hasattr(self, "_probe_status") and self._probe_status:
+                        tasks_text = f"{tasks_text} — {self._probe_status}"
+                    self.global_status_label.configure(
+                        text=f"Finalizing GitHub authentication... Please wait.\nTasks in progress: {tasks_text}"
+                    )
+                else:
+                    # All tasks completed
+                    self.global_status_label.configure(
+                        text="Authentication complete — UI is ready. You can continue using DevBlogger."
+                    )
+                    if hasattr(self, "global_status_progress"):
+                        self.global_status_progress.stop()
+                    # Hide after brief confirmation
+                    self.after(1500, lambda: self.global_status_frame.grid_remove())
+        except Exception as e:
+            self.logger.warning(f"Error updating post-auth banner: {e}")
+
     def _initialize_github_client(self):
         """Initialize GitHub API client."""
         def init_client_background():
@@ -685,6 +881,11 @@ class MainWindow(ctk.CTk):
                 def set_client():
                     self.github_client = client
                     self.logger.info("GitHub client initialized successfully")
+                    # Mark client ready; banner will hide when all tasks complete
+                    try:
+                        self._on_post_auth_client_ready()
+                    except Exception:
+                        pass
                 
                 self.after(0, set_client)
                 
