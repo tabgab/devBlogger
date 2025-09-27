@@ -9,29 +9,30 @@ import time
 from typing import Optional, Dict, Any
 import customtkinter as ctk
 
-# Try to import CTkMessagebox, fall back to tkinter if not available
+# Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
 try:
-    from CTkMessagebox import CTkMessagebox
-except ImportError:
+    import tkinter.messagebox as tk_messagebox
+except Exception:
+    tk_messagebox = None
+
+def CTkMessagebox(title, message, icon="info", **kwargs):
+    """Safe messagebox wrapper using tkinter.messagebox without grabs/topmost."""
     try:
-        import tkinter.messagebox as tk_messagebox
-        def CTkMessagebox(title, message, icon="info", **kwargs):
-            """Fallback messagebox using tkinter."""
-            root = ctk.CTk()
-            root.withdraw()  # Hide the root window
-            if icon == "check":
-                tk_messagebox.showinfo(title, message)
-            elif icon == "cancel" or icon == "warning":
+        if tk_messagebox:
+            if icon == "cancel":
                 tk_messagebox.showerror(title, message)
+            elif icon == "warning":
+                tk_messagebox.showwarning(title, message)
             else:
                 tk_messagebox.showinfo(title, message)
-            root.destroy()
-    except ImportError:
-        def CTkMessagebox(title, message, icon="info", **kwargs):
-            """Fallback messagebox using print."""
+        else:
             print(f"=== {title} ===")
             print(message)
             print("=" * (len(title) + 4))
+    except Exception:
+        print(f"=== {title} ===")
+        print(message)
+        print("=" * (len(title) + 4))
 
 from ..config.settings import Settings
 from ..config.database import DatabaseManager
@@ -407,6 +408,13 @@ class MainWindow(ctk.CTk):
         """Setup event bindings."""
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+        # On focus changes, nudge window state and sanitize toplevels to avoid click-through on macOS
+        try:
+            self.bind("<FocusIn>", lambda e: self._on_focus_change())
+            self.bind("<FocusOut>", lambda e: self._on_focus_change())
+        except Exception:
+            pass
+
     def _check_auth_status(self):
         """Check GitHub authentication status."""
         if self.github_auth.is_authenticated():
@@ -532,7 +540,134 @@ class MainWindow(ctk.CTk):
         self.logger.info("Authentication completed, updating UI immediately")
         self._update_github_status(True)
         self._initialize_github_client()
+        
+        # Restore focus and break potential macOS click-through after auth
+        def _restore_focus():
+            try:
+                self.lift()
+                try:
+                    # Bounce topmost to force window manager to re-register click region
+                    self.attributes("-topmost", True)
+                    self.after(100, lambda: self.attributes("-topmost", False))
+                except Exception:
+                    # Ignore if attribute unsupported
+                    pass
+                self.focus_force()
+                self.update_idletasks()
+            except Exception:
+                pass
+        self.after(200, _restore_focus)
+        # Sweep stray toplevels/grabs and normalize mac window style post-auth
+        for delay in (100, 300, 700, 1200):
+            try:
+                self.after(delay, self._sanitize_toplevels)
+                self.after(delay + 40, self._mac_nudge_style)
+            except Exception:
+                pass
     
+    def _sanitize_toplevels(self):
+        """Aggressively clean up toplevels/attributes to prevent invisible overlays hijacking clicks."""
+        try:
+            import tkinter as tk
+            root = getattr(tk, "_default_root", None) or self
+
+            # Release any global grab if present
+            try:
+                current = root.grab_current()
+                if current:
+                    current.grab_release()
+            except Exception:
+                pass
+
+            # Walk all immediate children (toplevels) and try to normalize
+            for w in list(root.winfo_children()):
+                try:
+                    # Determine if 'w' is a toplevel-like window
+                    is_toplevel = False
+                    try:
+                        if w.winfo_class() == "Toplevel":
+                            is_toplevel = True
+                    except Exception:
+                        pass
+                    try:
+                        from customtkinter import CTkToplevel  # type: ignore
+                        if isinstance(w, CTkToplevel):
+                            is_toplevel = True
+                    except Exception:
+                        pass
+                    if not is_toplevel:
+                        continue
+
+                    # Normalize window attributes: remove topmost, transparent, ensure alpha=1
+                    for attr, value in (("-topmost", False), ("-transparent", False)):
+                        try:
+                            w.attributes(attr, value)
+                        except Exception:
+                            pass
+                    try:
+                        w.attributes("-alpha", 1.0)
+                    except Exception:
+                        pass
+                    try:
+                        w.attributes("-type", "normal")
+                    except Exception:
+                        pass
+
+                    # Release any grab that might remain on this toplevel
+                    try:
+                        w.grab_release()
+                    except Exception:
+                        pass
+
+                    # Destroy invisible/hidden shells that can still intercept clicks
+                    try:
+                        if (not w.winfo_viewable()) or (not w.winfo_ismapped()):
+                            w.destroy()
+                            continue
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _mac_nudge_style(self):
+        """On macOS, normalize window style to ensure clicks are accepted after external focus changes."""
+        try:
+            import sys
+            if sys.platform != "darwin":
+                return
+            # Try unsupported style call to normalize document window behavior
+            try:
+                self.tk.call("tk::unsupported::MacWindowStyle", "style", self._w, "document", "normal")
+            except Exception:
+                pass
+            # Lift and briefly toggle alpha to 1 to force redraw
+            try:
+                self.lift()
+                self.attributes("-alpha", 0.999)
+                self.after(30, lambda: self.attributes("-alpha", 1.0))
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_focus_change(self):
+        """Nudge window manager state and sanitize overlays on focus changes."""
+        try:
+            # Briefly toggle topmost to re-register click region with window manager
+            try:
+                self.attributes("-topmost", True)
+                self.after(60, lambda: self.attributes("-topmost", False))
+            except Exception:
+                pass
+            # macOS-specific window style nudge
+            self.after(80, self._mac_nudge_style)
+            # Sanitize toplevels after the bounce
+            self.after(120, self._sanitize_toplevels)
+        except Exception:
+            pass
+
     def _on_user_data_available(self):
         """Called when user data becomes available after token exchange."""
         self.logger.info("User data available callback triggered")

@@ -9,7 +9,30 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Callable
 import customtkinter as ctk
 from CTkListbox import CTkListbox
-from CTkMessagebox import CTkMessagebox
+# Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
+try:
+    import tkinter.messagebox as tk_messagebox
+except Exception:
+    tk_messagebox = None
+
+def CTkMessagebox(title, message, icon="info", **kwargs):
+    """Safe messagebox wrapper using tkinter.messagebox without grabs/topmost."""
+    try:
+        if tk_messagebox:
+            if icon == "cancel":
+                tk_messagebox.showerror(title, message)
+            elif icon == "warning":
+                tk_messagebox.showwarning(title, message)
+            else:
+                tk_messagebox.showinfo(title, message)
+        else:
+            print(f"=== {title} ===")
+            print(message)
+            print("=" * (len(title) + 4))
+    except Exception:
+        print(f"=== {title} ===")
+        print(message)
+        print("=" * (len(title) + 4))
 
 from ..github.client import GitHubClient
 from ..github.models import GitHubCommit

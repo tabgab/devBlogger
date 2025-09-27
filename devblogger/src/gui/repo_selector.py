@@ -241,9 +241,9 @@ class RepositorySelectorDialog(ctk.CTkToplevel):
         self.geometry("600x500")
         self.resizable(True, True)
 
-        # Make dialog modal
+        # Make dialog modal (non-grabbing to keep main window responsive)
         self.transient(parent)
-        self.grab_set()
+        # self.grab_set()  # removed to avoid modal grab causing click issues on macOS
 
         # Center dialog
         self._center_dialog()

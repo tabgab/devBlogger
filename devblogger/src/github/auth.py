@@ -56,6 +56,8 @@ class GitHubAuth:
         self.log_callback = None
         self.success_callback = None
         self.token_exchange_in_progress = False
+        # UI scheduler hook to ensure callbacks run on Tk main thread
+        self.ui_after = None
 
     def is_configured(self) -> bool:
         """Check if GitHub OAuth is properly configured."""
@@ -265,17 +267,21 @@ class GitHubAuth:
                                         # Call success callback if available - schedule on main thread
                                         if CallbackHandler.auth_instance.success_callback:
                                             try:
-                                                # Import here to avoid circular imports
-                                                import tkinter as tk
-                                                # Schedule callback on main thread to avoid GUI crashes
-                                                if hasattr(tk, '_default_root') and tk._default_root:
-                                                    tk._default_root.after(0, CallbackHandler.auth_instance.success_callback)
+                                                # Prefer an explicit UI scheduler if provided by the GUI (e.g., widget.after)
+                                                ui_after = getattr(CallbackHandler.auth_instance, "ui_after", None)
+                                                if callable(ui_after):
+                                                    ui_after(0, CallbackHandler.auth_instance.success_callback)
                                                 else:
-                                                    # Fallback - call directly but log warning
-                                                    CallbackHandler.auth_instance.logger.warning("No main thread available, calling success callback directly")
-                                                    CallbackHandler.auth_instance.success_callback()
+                                                    # Fallback to tkinter default root if available
+                                                    import tkinter as tk
+                                                    if hasattr(tk, "_default_root") and tk._default_root:
+                                                        tk._default_root.after(0, CallbackHandler.auth_instance.success_callback)
+                                                    else:
+                                                        # Last resort: call directly (unsafe), but log a warning
+                                                        CallbackHandler.auth_instance.logger.warning("No Tk main loop available; calling success callback directly (may be unsafe)")
+                                                        CallbackHandler.auth_instance.success_callback()
                                             except Exception as e:
-                                                CallbackHandler.auth_instance.logger.error(f"Error in success callback: {e}")
+                                                CallbackHandler.auth_instance.logger.error(f"Error scheduling success callback: {e}")
                                     else:
                                         CallbackHandler.auth_instance._log("❌ Failed to get user data")
                                 else:
@@ -291,28 +297,45 @@ class GitHubAuth:
 
                     # Send success response
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
                     self.end_headers()
 
-                    response_html = '''
+                    # Embed success image as data URI if available
+                    image_data_uri = ""
+                    try:
+                        from pathlib import Path as _Path
+                        img_path = _Path(__file__).resolve().parent.parent.parent / "assets" / "authenticatedsuccess.png"
+                        if img_path.exists():
+                            with open(img_path, "rb") as f:
+                                b64 = base64.b64encode(f.read()).decode("ascii")
+                                image_data_uri = f"data:image/png;base64,{b64}"
+                    except Exception as _e:
+                        CallbackHandler.auth_instance.logger.warning(f"Could not embed success image: {_e}")
+                    if not image_data_uri:
+                        # Fallback: 1x1 transparent PNG
+                        image_data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+
+                    response_html = f'''
                     <!DOCTYPE html>
                     <html>
                     <head>
+                        <meta charset="utf-8">
                         <title>DevBlogger - Authentication Successful</title>
                         <style>
-                            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                            .success { color: #28a745; font-size: 24px; }
-                            .message { color: #6c757d; font-size: 16px; margin-top: 20px; }
+                            body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
+                            .success {{ color: #28a745; font-size: 24px; }}
+                            .message {{ color: #6c757d; font-size: 16px; margin-top: 20px; }}
                         </style>
                     </head>
                     <body>
-                        <div class="success">✓ Authentication Successful!</div>
+                        <div class="success">✅ Authentication Successful!</div>
+                        <img src="{image_data_uri}" alt="Authenticated" style="margin-top:20px; max-width:240px; height:auto;" />
                         <div class="message">You can now close this window and return to DevBlogger.</div>
                     </body>
                     </html>
                     '''
 
-                    self.wfile.write(response_html.encode())
+                    self.wfile.write(response_html.encode('utf-8'))
                     CallbackHandler.auth_instance.logger.info("Success response sent to browser")
                     CallbackHandler.auth_instance._log("🌐 Success response sent to browser")
 

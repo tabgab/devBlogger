@@ -6,7 +6,30 @@ DevBlogger - AI Configuration Panel
 import logging
 from typing import Dict, Any, Optional
 import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
+# Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
+try:
+    import tkinter.messagebox as tk_messagebox
+except Exception:
+    tk_messagebox = None
+
+def CTkMessagebox(title, message, icon="info", **kwargs):
+    """Safe messagebox wrapper using tkinter.messagebox without grabs/topmost."""
+    try:
+        if tk_messagebox:
+            if icon == "cancel":
+                tk_messagebox.showerror(title, message)
+            elif icon == "warning":
+                tk_messagebox.showwarning(title, message)
+            else:
+                tk_messagebox.showinfo(title, message)
+        else:
+            print(f"=== {title} ===")
+            print(message)
+            print("=" * (len(title) + 4))
+    except Exception:
+        print(f"=== {title} ===")
+        print(message)
+        print("=" * (len(title) + 4))
 
 from ..ai.manager import DevBloggerAIProviderManager
 from ..config.settings import Settings

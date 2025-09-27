@@ -10,29 +10,31 @@ import webbrowser
 from typing import Callable, Optional
 import customtkinter as ctk
 
-# Try to import CTkMessagebox, fall back to tkinter if not available
+# Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
 try:
-    from CTkMessagebox import CTkMessagebox
-except ImportError:
+    import tkinter.messagebox as tk_messagebox
+except Exception:
+    tk_messagebox = None
+
+def CTkMessagebox(title, message, icon="info", **kwargs):
+    """Safe messagebox wrapper using tkinter.messagebox without grabs/topmost."""
     try:
-        import tkinter.messagebox as tk_messagebox
-        def CTkMessagebox(title, message, icon="info", **kwargs):
-            """Fallback messagebox using tkinter."""
-            root = ctk.CTk()
-            root.withdraw()  # Hide the root window
-            if icon == "check":
-                tk_messagebox.showinfo(title, message)
-            elif icon == "cancel" or icon == "warning":
+        if tk_messagebox:
+            if icon == "cancel":
                 tk_messagebox.showerror(title, message)
+            elif icon == "warning":
+                tk_messagebox.showwarning(title, message)
             else:
+                # treat "check" and "info" similarly
                 tk_messagebox.showinfo(title, message)
-            root.destroy()
-    except ImportError:
-        def CTkMessagebox(title, message, icon="info", **kwargs):
-            """Fallback messagebox using print."""
+        else:
             print(f"=== {title} ===")
             print(message)
             print("=" * (len(title) + 4))
+    except Exception:
+        print(f"=== {title} ===")
+        print(message)
+        print("=" * (len(title) + 4))
 
 from ..github.auth import GitHubAuth
 
@@ -47,6 +49,11 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         self.github_auth = github_auth
         self.on_success = on_success
         self.logger = logging.getLogger(__name__)
+        # Ensure auth callbacks are scheduled on this dialog's Tk thread
+        try:
+            self.github_auth.ui_after = self.after
+        except Exception:
+            pass
 
         # Dialog state
         self.auth_in_progress = False
@@ -608,6 +615,26 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         # Close dialog
         self._close_dialog()
 
+        # Ensure main window regains focus after closing dialog (macOS click-through fix)
+        try:
+            if self.master and self.master.winfo_exists():
+                def _restore_focus():
+                    try:
+                        self.master.lift()
+                        # Bounce topmost to break potential click-through on macOS
+                        try:
+                            self.master.attributes("-topmost", True)
+                            self.master.after(100, lambda: self.master.attributes("-topmost", False))
+                        except Exception:
+                            # Ignore if attribute not supported on platform
+                            pass
+                        self.master.focus_force()
+                    except Exception:
+                        pass
+                self.master.after(150, _restore_focus)
+        except Exception:
+            pass
+
         # Call success callback
         try:
             self.on_success()
@@ -714,6 +741,11 @@ class GitHubLoginDialogSimple(ctk.CTkToplevel):
         self.github_auth = github_auth
         self.on_success = on_success
         self.logger = logging.getLogger(__name__)
+        # Ensure auth callbacks are scheduled on this dialog's Tk thread
+        try:
+            self.github_auth.ui_after = self.after
+        except Exception:
+            pass
 
         # Setup dialog
         self._setup_dialog()
