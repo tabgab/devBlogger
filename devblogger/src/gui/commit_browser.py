@@ -85,6 +85,9 @@ class CommitBrowser(ctk.CTkFrame):
         self.select_all_comments_cb: Optional[ctk.CTkCheckBox] = None
         # Cache processed status to avoid repeated DB reads across filter changes
         self._processed_cache: Dict[str, Dict[str, bool]] = {}
+        # Fast lookup maps to avoid DB calls on selection
+        self._index_to_commit: Dict[int, GitHubCommit] = {}
+        self._text_to_commit: Dict[str, GitHubCommit] = {}
 
         # Setup UI
         self._setup_ui()
@@ -676,6 +679,9 @@ class CommitBrowser(ctk.CTkFrame):
         self.commit_listbox.delete(0, "end")
         self.commit_message_checkboxes.clear()
         self.commit_comments_checkboxes.clear()
+        # Reset selection lookup maps
+        self._index_to_commit.clear()
+        self._text_to_commit.clear()
 
         if not self.filtered_commits:
             self.commit_listbox.insert(0, "No commits found")
@@ -884,19 +890,14 @@ class CommitBrowser(ctk.CTkFrame):
             return
 
         try:
-            # CTkListbox passes the selected value directly, not an index
-            # We need to find the index based on the selection
+            # Prefer fast lookup maps to avoid DB queries in selection path
             if isinstance(selection, str):
-                # Find the commit by matching the display text
-                for i, commit in enumerate(self.filtered_commits):
-                    display_text = self._format_commit_display(commit)
-                    if display_text == selection:
-                        self._update_preview(commit)
-                        return
+                commit = self._text_to_commit.get(selection)
+                if commit:
+                    self._update_preview(commit)
             elif isinstance(selection, int):
-                # Direct index
-                if 0 <= selection < len(self.filtered_commits):
-                    commit = self.filtered_commits[selection]
+                commit = self._index_to_commit.get(selection)
+                if commit:
                     self._update_preview(commit)
         except Exception as e:
             self.logger.error(f"Error handling commit selection: {e}")
@@ -1272,6 +1273,13 @@ class CommitBrowser(ctk.CTkFrame):
                 font=ctk.CTkFont(size=11)
             )
             text_label.grid(row=0, column=2, sticky="ew")
+
+            # Record mappings for fast selection lookup without extra DB hits
+            try:
+                self._index_to_commit[index] = commit
+                self._text_to_commit[display_text] = commit
+            except Exception:
+                pass
 
             # Bind click on label to show preview
             def _on_label_click(_event=None, c=commit):
