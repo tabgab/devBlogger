@@ -134,13 +134,21 @@ class BlogEditor(ctk.CTkFrame):
         prompt_label = ctk.CTkLabel(controls_frame, text="Prompt:")
         prompt_label.grid(row=2, column=0, padx=10, pady=(10, 5), sticky="w")
 
-        self.prompt_text = ctk.CTkTextbox(
+        # Use tkinter.Text instead of CTkTextbox to avoid destroy-after callbacks crash
+        import tkinter as tk
+        from tkinter import font as tkfont
+        self.prompt_text = tk.Text(
             controls_frame,
-            height=120,
-            wrap="word",
-            font=ctk.CTkFont(size=11)
+            height=8,
+            wrap="word"
         )
         self.prompt_text.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+        # Set prompt font
+        try:
+            _prompt_left_font = tkfont.Font(family="TkDefaultFont", size=11)
+            self.prompt_text.configure(font=_prompt_left_font)
+        except Exception:
+            pass
 
         # Load default prompt
         default_prompt = self.settings.get_default_prompt()
@@ -234,14 +242,80 @@ class BlogEditor(ctk.CTkFrame):
             )
             status_label.pack(side="left", padx=(0, 10), pady=6)
 
+            # Font controls (A- / A+)
+            font_controls = ctk.CTkFrame(header, fg_color="transparent")
+            font_controls.pack(side="right", padx=(0, 10), pady=6)
+            _prompt_font_size = {"value": 12}
+            def _set_font_size(delta: int):
+                try:
+                    _prompt_font_size["value"] = max(8, min(28, _prompt_font_size["value"] + delta))
+                    # Configure after prompt_box is created (below)
+                    if "prompt_box" in locals():
+                        pass  # placeholder
+                except Exception:
+                    pass
+            dec_btn = ctk.CTkButton(font_controls, text="A-", width=30, height=26, command=lambda: _set_font_size(-1))
+            inc_btn = ctk.CTkButton(font_controls, text="A+", width=30, height=26, command=lambda: _set_font_size(+1))
+            dec_btn.pack(side="left", padx=(0, 6))
+            inc_btn.pack(side="left")
+
+            # Find / Replace controls
+            fr_controls = ctk.CTkFrame(dialog, fg_color="transparent")
+            fr_controls.pack(fill="x", padx=10, pady=(6, 0))
+            fr_controls.grid_columnconfigure(1, weight=1)
+            fr_controls.grid_columnconfigure(3, weight=1)
+
+            find_label = ctk.CTkLabel(fr_controls, text="Find:")
+            find_label.grid(row=0, column=0, padx=(0, 6), pady=4, sticky="w")
+            find_var = ctk.StringVar()
+            find_entry = ctk.CTkEntry(fr_controls, textvariable=find_var, placeholder_text="Find text")
+            find_entry.grid(row=0, column=1, padx=(0, 10), pady=4, sticky="ew")
+
+            replace_label = ctk.CTkLabel(fr_controls, text="Replace:")
+            replace_label.grid(row=0, column=2, padx=(0, 6), pady=4, sticky="w")
+            replace_var = ctk.StringVar()
+            replace_entry = ctk.CTkEntry(fr_controls, textvariable=replace_var, placeholder_text="Replace with")
+            replace_entry.grid(row=0, column=3, padx=(0, 10), pady=4, sticky="ew")
+
+            ctl_btns = ctk.CTkFrame(fr_controls, fg_color="transparent")
+            ctl_btns.grid(row=0, column=4, padx=(0, 0), pady=4, sticky="e")
+            # buttons will be wired after prompt_box is created
+
             # Text area
             body = ctk.CTkFrame(dialog)
             body.pack(fill="both", expand=True, padx=10, pady=10)
             body.grid_rowconfigure(0, weight=1)
             body.grid_columnconfigure(0, weight=1)
 
-            prompt_box = ctk.CTkTextbox(body, wrap="word", font=ctk.CTkFont(size=12))
+            # Use tkinter.Text instead of CTkTextbox to avoid destroy-after callbacks crash
+            import tkinter as tk
+            from tkinter import font as tkfont
+
+            prompt_box = tk.Text(body, wrap="word")
             prompt_box.grid(row=0, column=0, sticky="nsew")
+
+            # Scrollbar
+            yscroll = ctk.CTkScrollbar(body, command=prompt_box.yview)
+            yscroll.grid(row=0, column=1, sticky="ns")
+            prompt_box.configure(yscrollcommand=yscroll.set)
+
+            # Set initial font and wire font buttons
+            _prompt_font = tkfont.Font(family="TkDefaultFont", size=_prompt_font_size["value"])
+            prompt_box.configure(font=_prompt_font)
+            def _apply_font():
+                try:
+                    nonlocal _prompt_font
+                    _prompt_font.configure(size=_prompt_font_size["value"])
+                except Exception:
+                    pass
+            def _set_font_size(delta: int):
+                try:
+                    _prompt_font_size["value"] = max(8, min(28, _prompt_font_size["value"] + delta))
+                    _apply_font()
+                except Exception:
+                    pass
+            dec_btn.configure(command=lambda: _set_font_size(-1))
+            inc_btn.configure(command=lambda: _set_font_size(+1))
 
             # Initial content: custom_full_prompt if present, else compose current
             try:
@@ -250,20 +324,87 @@ class BlogEditor(ctk.CTkFrame):
                 initial_text = self._compose_full_prompt()
             prompt_box.insert("1.0", initial_text)
 
+            # Find/Replace functionality
+            def _clear_find_tags():
+                try:
+                    prompt_box.tag_remove("find_match", "1.0", "end")
+                except Exception:
+                    pass
+            prompt_box.tag_configure("find_match", background="yellow")
+
+            def _find_next():
+                _clear_find_tags()
+                needle = find_var.get()
+                if not needle:
+                    return
+                idx = prompt_box.search(needle, prompt_box.index("insert +1c"), nocase=1)
+                if not idx:
+                    # wrap search to start
+                    idx = prompt_box.search(needle, "1.0", nocase=1)
+                    if not idx:
+                        return
+                end = f"{idx}+{len(needle)}c"
+                prompt_box.tag_add("find_match", idx, end)
+                prompt_box.mark_set("insert", end)
+                prompt_box.see(idx)
+
+            def _replace_one():
+                needle = find_var.get()
+                repl = replace_var.get()
+                if not needle:
+                    return
+                _clear_find_tags()
+                idx = prompt_box.search(needle, "insert", nocase=1)
+                if not idx:
+                    idx = prompt_box.search(needle, "1.0", nocase=1)
+                    if not idx:
+                        return
+                end = f"{idx}+{len(needle)}c"
+                prompt_box.delete(idx, end)
+                prompt_box.insert(idx, repl)
+                prompt_box.mark_set("insert", f"{idx}+{len(repl)}c")
+                prompt_box.see(idx)
+
+            def _replace_all():
+                needle = find_var.get()
+                repl = replace_var.get()
+                if not needle:
+                    return
+                _clear_find_tags()
+                start = "1.0"
+                count = 0
+                while True:
+                    idx = prompt_box.search(needle, start, nocase=1)
+                    if not idx:
+                        break
+                    end = f"{idx}+{len(needle)}c"
+                    prompt_box.delete(idx, end)
+                    prompt_box.insert(idx, repl)
+                    start = f"{idx}+{len(repl)}c"
+                    count += 1
+
+            find_btn = ctk.CTkButton(ctl_btns, text="Find Next", width=90, command=_find_next)
+            rep_btn = ctk.CTkButton(ctl_btns, text="Replace", width=80, command=_replace_one)
+            repall_btn = ctk.CTkButton(ctl_btns, text="Replace All", width=100, command=_replace_all)
+            find_btn.pack(side="left", padx=(0, 6))
+            rep_btn.pack(side="left", padx=(0, 6))
+            repall_btn.pack(side="left")
+
             # Buttons
             footer = ctk.CTkFrame(dialog, fg_color="transparent")
             footer.pack(fill="x", padx=10, pady=(0, 10))
 
             def use_prompt_and_close():
                 try:
-                    self.custom_full_prompt = prompt_box.get("1.0", "end").strip()
+                    self.custom_full_prompt = prompt_box.get("1.0", "end-1c").strip()
                     self.generation_info.configure(
                         text="Custom prompt set — generation will use your edited text.",
                         text_color="blue"
                     )
                 except Exception:
                     pass
-                dialog.destroy()
+                # Defer destroy slightly to avoid Tk callbacks racing on close
+                dialog.after(50, dialog.destroy)
 
             def reset_to_auto():
                 self.custom_full_prompt = None
@@ -271,7 +412,7 @@ class BlogEditor(ctk.CTkFrame):
                     text="Auto-composed prompt will be used.",
                     text_color="gray"
                 )
-                dialog.destroy()
+                dialog.after(50, dialog.destroy)
 
             use_btn = ctk.CTkButton(footer, text="Use This Prompt", fg_color="green", hover_color="darkgreen", command=use_prompt_and_close, height=36)
             use_btn.pack(side="left", padx=(0, 10))
@@ -364,10 +505,13 @@ class BlogEditor(ctk.CTkFrame):
         editor_container.grid_columnconfigure(0, weight=1)
         editor_container.grid_rowconfigure(0, weight=1)
 
-        self.blog_editor = ctk.CTkTextbox(
+        # Use tkinter.Text instead of CTkTextbox to avoid destroy-after callbacks crash
+        import tkinter as tk
+        from tkinter import font as tkfont
+
+        self.blog_editor = tk.Text(
             editor_container,
             wrap="word",
-            font=ctk.CTkFont(size=12),
             undo=True
         )
         self.blog_editor.grid(row=0, column=0, sticky="nsew")
@@ -376,6 +520,10 @@ class BlogEditor(ctk.CTkFrame):
         scrollbar = ctk.CTkScrollbar(editor_container, command=self.blog_editor.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.blog_editor.configure(yscrollcommand=scrollbar.set)
+
+        # Initialize editor font
+        self._editor_font = tkfont.Font(family="TkDefaultFont", size=self.current_font_size)
+        self.blog_editor.configure(font=self._editor_font)
 
     def _load_initial_content(self):
         """Load initial content and setup providers."""
@@ -846,8 +994,17 @@ generated_by: {self.selected_provider}
 
     def _update_editor_font(self):
         """Update the font size of the blog editor."""
-        new_font = ctk.CTkFont(size=self.current_font_size)
-        self.blog_editor.configure(font=new_font)
+        try:
+            from tkinter import font as tkfont
+            if not hasattr(self, "_editor_font"):
+                self._editor_font = tkfont.Font(family="TkDefaultFont", size=self.current_font_size)
+            else:
+                self._editor_font.configure(size=self.current_font_size)
+            self.blog_editor.configure(font=self._editor_font)
+        except Exception:
+            # Fallback for environments where tkfont may not be available
+            self.blog_editor.configure(font=ctk.CTkFont(size=self.current_font_size))
+
         self.font_size_display.configure(text=str(self.current_font_size))
         
         # Log the font size change

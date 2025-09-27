@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Callable
 import customtkinter as ctk
 from CTkListbox import CTkListbox
+import tkinter as tk
 # Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
 try:
     import tkinter.messagebox as tk_messagebox
@@ -74,7 +75,7 @@ class CommitBrowser(ctk.CTkFrame):
 
         # UI components
         self.commit_listbox: Optional[CTkListbox] = None
-        self.preview_text: Optional[ctk.CTkTextbox] = None
+        self.preview_text: Optional[tk.Text] = None
         self.load_button: Optional[ctk.CTkButton] = None
 
         # Busy state (DB operations)
@@ -298,13 +299,20 @@ class CommitBrowser(ctk.CTkFrame):
         preview_container.grid_columnconfigure(0, weight=1)
         preview_container.grid_rowconfigure(0, weight=1)
 
-        self.preview_text = ctk.CTkTextbox(
+        self.preview_text = tk.Text(
             preview_container,
-            wrap="word",
-            font=ctk.CTkFont(size=11),
-            state="disabled"
+            wrap="word"
         )
         self.preview_text.grid(row=0, column=0, sticky="nsew")
+        # Scrollbar for preview
+        try:
+            yscroll_prev = ctk.CTkScrollbar(preview_container, command=self.preview_text.yview)
+            yscroll_prev.grid(row=0, column=1, sticky="ns")
+            self.preview_text.configure(yscrollcommand=yscroll_prev.set)
+        except Exception:
+            pass
+        # Start disabled; enable when writing
+        self.preview_text.configure(state="disabled")
 
     def _load_commits(self):
         """Load commits from GitHub with smart loading and user confirmation."""

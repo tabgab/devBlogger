@@ -9,6 +9,7 @@ import time
 import webbrowser
 from typing import Callable, Optional
 import customtkinter as ctk
+import tkinter as tk
 
 # Safe, non-grabbing messagebox wrapper to avoid input grabs/topmost issues
 try:
@@ -160,13 +161,20 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         manual_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.manual_url_text = ctk.CTkTextbox(
+        # Use tkinter.Text instead of CTkTextbox to avoid destroy-after callbacks crash
+        self.manual_url_text = tk.Text(
             self.manual_frame,
-            height=60,
-            font=ctk.CTkFont(size=10),
+            height=4,
             wrap="word"
         )
         self.manual_url_text.pack(fill="x", padx=10, pady=(0, 10))
+        # Set a reasonable font
+        try:
+            from tkinter import font as tkfont
+            self._manual_url_font = tkfont.Font(family="TkDefaultFont", size=10)
+            self.manual_url_text.configure(font=self._manual_url_font)
+        except Exception:
+            pass
         self.manual_url_text.insert("1.0", "⏳ Generating authorization URL...")
         self.manual_url_text.configure(state="disabled")
 
@@ -208,13 +216,23 @@ class GitHubLoginDialog(ctk.CTkToplevel):
         )
         self.log_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        self.log_text = ctk.CTkTextbox(
+        # Use tkinter.Text instead of CTkTextbox to avoid destroy-after callbacks crash
+        self.log_text = tk.Text(
             self.log_frame,
-            height=150,
-            font=ctk.CTkFont(size=10),
+            height=10,
             wrap="word"
         )
-        self.log_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Add scrollbar for the log
+        log_scroll = ctk.CTkScrollbar(self.log_frame, command=self.log_text.yview)
+        log_scroll.pack(side="right", fill="y", padx=(0, 10), pady=(0, 10))
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+        self.log_text.pack(fill="both", expand=True, padx=(10, 0), pady=(0, 10))
+        try:
+            from tkinter import font as tkfont
+            self._log_font = tkfont.Font(family="TkDefaultFont", size=10)
+            self.log_text.configure(font=self._log_font)
+        except Exception:
+            pass
         self.log_text.insert("1.0", "Authentication log will appear here...\n")
         self.log_text.configure(state="disabled")
 

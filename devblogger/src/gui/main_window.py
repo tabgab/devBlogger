@@ -82,6 +82,8 @@ class MainWindow(ctk.CTk):
         self.ai_config: Optional[AIConfigurationPanel] = None
         self.blog_editor: Optional[BlogEditor] = None
         self.auth_in_progress: bool = False  # Prevent multiple auth dialogs
+        # Track a user-initiated Refresh click while client is not yet ready
+        self._pending_repo_refresh: bool = False
         self.logger.info("GUI state variables initialized")
 
         # Setup window
@@ -558,7 +560,8 @@ class MainWindow(ctk.CTk):
         self.auth_in_progress = False
 
         # Track post-auth tasks and wire callbacks
-        self._post_auth_pending = {"server": True, "client": True, "stabilize": True, "repos": False}
+        # Do NOT gate clicks on 'stabilize' - keep it False for immediate click acceptance
+        self._post_auth_pending = {"server": True, "client": True, "stabilize": False, "repos": False}
         try:
             # Ensure UI callbacks from auth use the main window's event loop
             self.github_auth.ui_after = self.after
@@ -567,11 +570,11 @@ class MainWindow(ctk.CTk):
         except Exception:
             pass
 
-        # Start stabilization task to keep UI banner until clicks are reliably accepted
+        # Do NOT start any stabilization that could gate clicks; do a quick one-time nudge only
         try:
-            self._start_post_auth_stabilization()
-        except Exception as e:
-            self.logger.warning(f"Could not start post-auth stabilization: {e}")
+            self.after(50, self._mac_nudge_style)
+        except Exception:
+            pass
 
         # Stop the authentication server immediately (non-blocking)
         if self.github_auth.callback_server:
@@ -856,6 +859,13 @@ class MainWindow(ctk.CTk):
             else:
                 self._post_auth_pending["client"] = False
             self._post_auth_check_ready()
+            # If user clicked Refresh earlier, run it now without delay
+            try:
+                if getattr(self, "_pending_repo_refresh", False):
+                    self._pending_repo_refresh = False
+                    self.after_idle(self._refresh_repositories)
+            except Exception:
+                pass
         except Exception as e:
             self.logger.warning(f"Error handling post-auth client ready: {e}")
 
@@ -930,6 +940,18 @@ class MainWindow(ctk.CTk):
         
         if not self.github_client:
             self.logger.info("Refresh attempted but GitHub client not ready yet")
+            # Queue a refresh to run immediately when client becomes ready; keep UI responsive
+            self._pending_repo_refresh = True
+            # Show non-blocking banner to inform user what's happening
+            try:
+                if hasattr(self, "global_status_frame"):
+                    self.global_status_label.configure(text="Initializing GitHub client... Please wait.")
+                    self.global_status_frame.grid()
+                    self.global_status_frame.tkraise()
+                    if hasattr(self, "global_status_progress"):
+                        self.global_status_progress.start()
+            except Exception:
+                pass
             return
 
         # Check if already loading
@@ -1165,6 +1187,13 @@ class MainWindow(ctk.CTk):
             
             # Pack the commit browser to make it visible
             self.commit_browser.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+            # Immediately start loading commits with global busy indicator
+            try:
+                self._on_commit_browser_busy(True, "Loading commits from GitHub...")
+                self.commit_browser._load_commits()
+            except Exception as e:
+                self.logger.warning(f"Could not auto-load commits: {e}")
             
             self.logger.info("Commit browser initialized successfully")
             
@@ -1199,33 +1228,33 @@ class MainWindow(ctk.CTk):
             widget.destroy()
 
     def _on_commits_selected(self, commits: list):
-        """Handle commit selection for blog generation."""
+        """Handle commit selection for blog generation (debounced to avoid re-entrancy crashes)."""
         self.selected_commits = commits
         self.logger.info(f"Selected {len(commits)} commits for blog generation")
-        
-        # Update blog tab status
-        self._update_blog_tab_status()
-        
-        # Initialize blog editor if commits are selected and AI is configured
-        if commits and self.current_repo:
-            # Check if any providers are configured (don't test connections)
-            configured_providers = []
-            for name, provider in self.ai_manager.get_all_providers().items():
-                if provider.is_configured():
-                    configured_providers.append(name)
-            
-            if configured_providers:
-                self._initialize_blog_editor()
-            else:
-                # Show updated placeholder with current status
-                self._show_blog_placeholder()
+        # Debounce blog editor updates; rapid changes won't destroy/recreate immediately
+        try:
+            if hasattr(self, "_blog_update_after_id") and self._blog_update_after_id:
+                self.after_cancel(self._blog_update_after_id)
+        except Exception:
+            pass
+        # Run immediately to keep UI snappy; fallback to idle only on error inside _rebuild_blog_area
+        self._rebuild_blog_area()
 
     def _show_blog_placeholder(self):
         """Show placeholder in blog generation tab."""
-        # Clear existing content
-        for widget in self.blog_content.winfo_children():
-            widget.destroy()
-            
+        # Hide editor if present and clear any non-editor children
+        try:
+            if self.blog_editor and self.blog_editor.winfo_exists():
+                self.blog_editor.grid_remove()
+        except Exception:
+            pass
+        for widget in list(self.blog_content.winfo_children()):
+            if widget is not self.blog_editor:
+                try:
+                    widget.destroy()
+                except Exception:
+                    pass
+
         # Create informative placeholder with status
         placeholder_frame = ctk.CTkFrame(self.blog_content)
         placeholder_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
@@ -1300,23 +1329,102 @@ class MainWindow(ctk.CTk):
         instructions_label.grid(row=4, column=0, padx=20, pady=(10, 20), sticky="w")
 
     def _initialize_blog_editor(self):
-        """Initialize blog editor with selected commits."""
+        """Initialize blog editor with selected commits (prefer immediate; fallback to idle on error)."""
         if not self.selected_commits or not self.current_repo:
             return
-            
-        # Clear existing content
-        for widget in self.blog_content.winfo_children():
-            widget.destroy()
-            
-        # Create blog editor
-        self.blog_editor = BlogEditor(
-            self.blog_content,
-            self.ai_manager,
-            self.settings,
-            self.selected_commits,
-            self.current_repo
-        )
-        self.blog_editor.grid(row=0, column=0, sticky="nsew")
+
+        if getattr(self, "_blog_editor_creating", False):
+            self.logger.info("Blog editor creation already in progress; skipping")
+            return
+
+        self._blog_editor_creating = True
+        try:
+            # Fast path: immediate clear and create to avoid any perceived delay
+            self._clear_blog_content_immediate()
+            self.blog_editor = BlogEditor(
+                self.blog_content,
+                self.ai_manager,
+                self.settings,
+                self.selected_commits,
+                self.current_repo
+            )
+            self.blog_editor.grid(row=0, column=0, sticky="nsew")
+            self._blog_editor_creating = False
+        except Exception as e:
+            self.logger.warning(f"Immediate BlogEditor create failed, retrying on idle: {e}")
+            # Fallback path: safe clear + create on idle to avoid trace/remove races
+            def _safe_create():
+                try:
+                    self._safe_clear_blog_content()
+                    self.blog_editor = BlogEditor(
+                        self.blog_content,
+                        self.ai_manager,
+                        self.settings,
+                        self.selected_commits,
+                        self.current_repo
+                    )
+                    self.blog_editor.grid(row=0, column=0, sticky="nsew")
+                except Exception as ex:
+                    self.logger.error(f"Safe BlogEditor create failed: {ex}")
+                finally:
+                    self._blog_editor_creating = False
+            self.after_idle(_safe_create)
+
+    # Helper: rebuild blog area based on current selection/config (called by debounce)
+    def _rebuild_blog_area(self):
+        try:
+            # Clear any pending id since we are executing now
+            self._blog_update_after_id = None
+        except Exception:
+            pass
+
+        try:
+            configured_providers = [
+                name for name, provider in self.ai_manager.get_all_providers().items()
+                if provider.is_configured()
+            ]
+            if self.selected_commits and self.current_repo and configured_providers:
+                self._initialize_blog_editor()
+            else:
+                self._show_blog_placeholder()
+        except Exception as e:
+            self.logger.error(f"Error rebuilding blog area: {e}")
+
+    # Helper: safely clear blog_content children without destroying during active callbacks
+    def _safe_clear_blog_content(self):
+        """Safely clear blog tab widgets to avoid trace/remove crashes inside customtkinter."""
+        try:
+            children = list(self.blog_content.winfo_children())
+            for w in children:
+                try:
+                    # First, unmap widget so internal traces settle
+                    try:
+                        w.grid_remove()
+                    except Exception:
+                        try:
+                            w.pack_forget()
+                        except Exception:
+                            pass
+                    # Destroy on next idle to avoid trace_remove races without adding visible delay
+                    self.after_idle(w.destroy)
+                except Exception:
+                    pass
+            self.blog_editor = None
+        except Exception as e:
+            self.logger.warning(f"Safe clear blog content warning: {e}")
+
+    # Helper: immediate clear used on fast path; exceptions fall back to safe path
+    def _clear_blog_content_immediate(self):
+        try:
+            for w in list(self.blog_content.winfo_children()):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            self.blog_editor = None
+        except Exception as e:
+            # Propagate to caller to trigger fallback
+            raise e
 
     def _show_settings(self):
         """Show application settings."""
@@ -1521,19 +1629,14 @@ class MainWindow(ctk.CTk):
         self.destroy()
 
     def _update_blog_tab_status(self):
-        """Update blog tab status and content based on current state."""
-        # Check if both requirements are met (don't test connections)
-        configured_providers = []
-        for name, provider in self.ai_manager.get_all_providers().items():
-            if provider.is_configured():
-                configured_providers.append(name)
-        
-        if self.selected_commits and self.current_repo and configured_providers:
-            # All requirements met - initialize blog editor
-            self._initialize_blog_editor()
-        else:
-            # Show updated placeholder with current status
-            self._show_blog_placeholder()
+        """Debounced update of blog tab to avoid destroy-time crashes."""
+        try:
+            if hasattr(self, "_blog_update_after_id") and self._blog_update_after_id:
+                self.after_cancel(self._blog_update_after_id)
+        except Exception:
+            pass
+        # Run immediately to keep UI snappy; fallback to idle only on error inside _rebuild_blog_area
+        self._rebuild_blog_area()
 
     def _on_ai_config_changed(self):
         """Handle AI configuration changes."""
