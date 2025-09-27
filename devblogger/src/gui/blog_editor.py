@@ -62,6 +62,8 @@ class BlogEditor(ctk.CTkFrame):
         self.generation_in_progress = False
         self.current_blog_content = ""
         self.selected_provider = None
+        # Optional override: if set, this exact string is sent to the AI instead of the auto-composed prompt
+        self.custom_full_prompt: Optional[str] = None
 
         # Setup UI
         self._setup_ui()
@@ -150,6 +152,17 @@ class BlogEditor(ctk.CTkFrame):
         buttons_frame.grid(row=4, column=0, padx=10, pady=(10, 10), sticky="ew")
         buttons_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
+        # Review & Edit full prompt button
+        self.review_prompt_button = ctk.CTkButton(
+            buttons_frame,
+            text="Review & Edit Full Prompt",
+            command=self._open_prompt_review_dialog,
+            fg_color="gray",
+            hover_color="dimgray",
+            height=36
+        )
+        self.review_prompt_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
         # Generate button
         self.generate_button = ctk.CTkButton(
             buttons_frame,
@@ -159,7 +172,7 @@ class BlogEditor(ctk.CTkFrame):
             hover_color="darkgreen",
             height=40
         )
-        self.generate_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+        self.generate_button.grid(row=1, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
 
         # Save button
         self.save_button = ctk.CTkButton(
@@ -171,7 +184,7 @@ class BlogEditor(ctk.CTkFrame):
             height=40,
             state="disabled"
         )
-        self.save_button.grid(row=1, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
+        self.save_button.grid(row=2, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
 
         # Reset button
         self.reset_button = ctk.CTkButton(
@@ -182,7 +195,95 @@ class BlogEditor(ctk.CTkFrame):
             hover_color="darkorange",
             height=40
         )
-        self.reset_button.grid(row=2, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
+        self.reset_button.grid(row=3, column=0, padx=(0, 5), pady=(5, 0), sticky="ew")
+
+    def _compose_full_prompt(self) -> str:
+        """Compose the full prompt that will be sent to the AI based on current UI state."""
+        base_prompt = self.prompt_text.get("1.0", "end").strip()
+        commit_data = self._prepare_commit_data()
+        return f"{base_prompt}\n\nCommit Data:\n{commit_data}"
+
+    def _open_prompt_review_dialog(self):
+        """Open a non-modal dialog to review and edit the exact prompt to be submitted."""
+        try:
+            dialog = ctk.CTkToplevel(self)
+            dialog.title("Review & Edit Full Prompt")
+            dialog.geometry("900x650")
+            dialog.resizable(True, True)
+
+            # Center on parent without modal grabs
+            dialog.transient(self.winfo_toplevel())
+
+            # Header
+            header = ctk.CTkFrame(dialog)
+            header.pack(fill="x", padx=10, pady=(10, 0))
+
+            title = ctk.CTkLabel(
+                header,
+                text=f"Full Prompt for {self.repository} — {len(self.commits)} commits",
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
+            title.pack(side="left", padx=(10, 10), pady=6)
+
+            # Status label
+            status_label = ctk.CTkLabel(
+                header,
+                text="Edit the text below. Click 'Use This Prompt' to override the auto-composed prompt.",
+                text_color="gray",
+                font=ctk.CTkFont(size=11)
+            )
+            status_label.pack(side="left", padx=(0, 10), pady=6)
+
+            # Text area
+            body = ctk.CTkFrame(dialog)
+            body.pack(fill="both", expand=True, padx=10, pady=10)
+            body.grid_rowconfigure(0, weight=1)
+            body.grid_columnconfigure(0, weight=1)
+
+            prompt_box = ctk.CTkTextbox(body, wrap="word", font=ctk.CTkFont(size=12))
+            prompt_box.grid(row=0, column=0, sticky="nsew")
+
+            # Initial content: custom_full_prompt if present, else compose current
+            try:
+                initial_text = self.custom_full_prompt if self.custom_full_prompt else self._compose_full_prompt()
+            except Exception:
+                initial_text = self._compose_full_prompt()
+            prompt_box.insert("1.0", initial_text)
+
+            # Buttons
+            footer = ctk.CTkFrame(dialog, fg_color="transparent")
+            footer.pack(fill="x", padx=10, pady=(0, 10))
+
+            def use_prompt_and_close():
+                try:
+                    self.custom_full_prompt = prompt_box.get("1.0", "end").strip()
+                    self.generation_info.configure(
+                        text="Custom prompt set — generation will use your edited text.",
+                        text_color="blue"
+                    )
+                except Exception:
+                    pass
+                dialog.destroy()
+
+            def reset_to_auto():
+                self.custom_full_prompt = None
+                self.generation_info.configure(
+                    text="Auto-composed prompt will be used.",
+                    text_color="gray"
+                )
+                dialog.destroy()
+
+            use_btn = ctk.CTkButton(footer, text="Use This Prompt", fg_color="green", hover_color="darkgreen", command=use_prompt_and_close, height=36)
+            use_btn.pack(side="left", padx=(0, 10))
+
+            reset_btn = ctk.CTkButton(footer, text="Reset to Auto", fg_color="orange", hover_color="darkorange", command=reset_to_auto, height=36)
+            reset_btn.pack(side="left", padx=(0, 10))
+
+            close_btn = ctk.CTkButton(footer, text="Close", fg_color="gray", hover_color="dimgray", command=dialog.destroy, height=36)
+            close_btn.pack(side="right")
+
+        except Exception as e:
+            self.logger.error(f"Error opening prompt review dialog: {e}")
 
     def _create_editor_area(self, parent):
         """Create blog editor area."""
@@ -365,8 +466,10 @@ class BlogEditor(ctk.CTkFrame):
                         raise Exception("No active AI provider configured")
                     
                     # Use synchronous generation method
+                    # Compose final prompt (use custom if provided)
+                    full_prompt = self.custom_full_prompt if getattr(self, "custom_full_prompt", None) else f"{prompt}\n\nCommit Data:\n{commit_data}"
                     response_text = active_provider.generate_sync(
-                        prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                        prompt=full_prompt,
                         max_tokens=2000,
                         temperature=0.7
                     )
@@ -383,9 +486,11 @@ class BlogEditor(ctk.CTkFrame):
                     asyncio.set_event_loop(loop)
                     
                     try:
+                        # Compose final prompt (use custom if provided)
+                        full_prompt = self.custom_full_prompt if getattr(self, "custom_full_prompt", None) else f"{prompt}\n\nCommit Data:\n{commit_data}"
                         response = loop.run_until_complete(
                             self.ai_manager.generate_with_active(
-                                prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                                prompt=full_prompt,
                                 max_tokens=2000,
                                 temperature=0.7
                             )
@@ -672,15 +777,18 @@ generated_by: {self.selected_provider}
                     # Prepare commit data for AI
                     commit_data = self._prepare_commit_data()
 
-                    # Generate blog entry with new provider
-                    response = self.ai_manager.generate_with_active(
-                        prompt=f"{prompt}\n\nCommit Data:\n{commit_data}",
+                    # Compose final prompt (use custom if provided)
+                    full_prompt = self.custom_full_prompt if getattr(self, "custom_full_prompt", None) else f"{prompt}\n\nCommit Data:\n{commit_data}"
+
+                    # Generate blog entry with new provider (sync to avoid event loop conflicts)
+                    response_text = provider.generate_sync(
+                        prompt=full_prompt,
                         max_tokens=2000,
                         temperature=0.7
                     )
 
                     # Update editor with regenerated content
-                    self.after(0, lambda: self._handle_regeneration_success(response.text, provider_name))
+                    self.after(0, lambda: self._handle_regeneration_success(response_text, provider_name))
 
                 except Exception as e:
                     self.logger.error(f"Error regenerating blog entry: {e}")
