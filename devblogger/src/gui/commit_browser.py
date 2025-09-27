@@ -75,6 +75,12 @@ class CommitBrowser(ctk.CTkFrame):
         self.preview_text: Optional[ctk.CTkTextbox] = None
         self.load_button: Optional[ctk.CTkButton] = None
 
+        # Busy state (DB operations)
+        self.db_busy: bool = False
+        self.refresh_button: Optional[ctk.CTkButton] = None
+        self.select_all_message_cb: Optional[ctk.CTkCheckBox] = None
+        self.select_all_comments_cb: Optional[ctk.CTkCheckBox] = None
+
         # Setup UI
         self._setup_ui()
         # Show initial state instead of auto-loading
@@ -183,13 +189,13 @@ class CommitBrowser(ctk.CTkFrame):
         search_entry.grid(row=0, column=1, padx=(0, 10))
 
         # Refresh button
-        refresh_button = ctk.CTkButton(
+        self.refresh_button = ctk.CTkButton(
             right_controls,
             text="Refresh",
             command=self._load_commits,
             width=80
         )
-        refresh_button.grid(row=0, column=2)
+        self.refresh_button.grid(row=0, column=2)
 
     def _create_paned_interface(self, parent):
         """Create paned interface with list and preview."""
@@ -211,22 +217,22 @@ class CommitBrowser(ctk.CTkFrame):
 
         # Select all checkboxes
         self.select_all_message_var = ctk.BooleanVar()
-        select_all_message_cb = ctk.CTkCheckBox(
+        self.select_all_message_cb = ctk.CTkCheckBox(
             list_header,
             text="Process Messages",
             variable=self.select_all_message_var,
             command=self._toggle_select_all_messages
         )
-        select_all_message_cb.grid(row=0, column=0)
+        self.select_all_message_cb.grid(row=0, column=0)
 
         self.select_all_comments_var = ctk.BooleanVar()
-        select_all_comments_cb = ctk.CTkCheckBox(
+        self.select_all_comments_cb = ctk.CTkCheckBox(
             list_header,
             text="Process Comments",
             variable=self.select_all_comments_var,
             command=self._toggle_select_all_comments
         )
-        select_all_comments_cb.grid(row=0, column=1, padx=(10, 0))
+        self.select_all_comments_cb.grid(row=0, column=1, padx=(10, 0))
 
         # Commit count label
         self.count_label = ctk.CTkLabel(
@@ -236,6 +242,20 @@ class CommitBrowser(ctk.CTkFrame):
             text_color="gray"
         )
         self.count_label.grid(row=0, column=2, padx=(20, 0))
+
+        # Busy indicator (hidden by default)
+        self.busy_label = ctk.CTkLabel(
+            list_header,
+            text="Working...",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="black"
+        )
+        self.busy_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.busy_label.grid_remove()
+
+        self.busy_progress = ctk.CTkProgressBar(list_header, mode="indeterminate", width=160)
+        self.busy_progress.grid(row=1, column=2, sticky="e", pady=(6, 0))
+        self.busy_progress.grid_remove()
 
         # Scrollable commit list
         list_container = ctk.CTkFrame(list_frame)
@@ -666,12 +686,9 @@ class CommitBrowser(ctk.CTkFrame):
         threading.Thread(target=load_commits_background, daemon=True).start()
     def _populate_commit_list_fast(self, processed_commits: Dict[str, Dict[str, bool]]):
         """Populate commit list with minimal UI interruptions."""
-        # Add all commits at once to minimize UI updates
+        # Build rows with checkboxes at the front and text label after them
         for i, commit in enumerate(self.filtered_commits):
-            # Create display text with processing status
-            processed_status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
-            display_text = self._format_commit_display_with_status(commit, processed_status)
-            self.commit_listbox.insert(i, display_text)
+            self._create_row(i, commit, processed_commits.get(commit.sha, {'message': False, 'comments': False}))
 
         # Update final count
         self.count_label.configure(text=f"{len(self.filtered_commits)} commits")
@@ -850,6 +867,9 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _on_commit_selected(self, selection):
         """Handle commit selection in listbox."""
+        if self.db_busy:
+            # Ignore selection while DB is busy to prevent race conditions
+            return
         if selection is None or not self.filtered_commits:
             return
 
@@ -1050,8 +1070,13 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _toggle_select_all_messages(self):
         """Toggle select all messages for processing."""
+        if self.db_busy:
+            return
         select_all = self.select_all_message_var.get()
-        
+
+        # Enter busy state
+        self._set_busy(True, "Updating message selections...")
+
         # Log the click immediately for debugging
         self.logger.info(f"🔴 PROCESS MESSAGES CHECKBOX CLICKED - select_all: {select_all}")
 
@@ -1063,6 +1088,16 @@ class CommitBrowser(ctk.CTkFrame):
 
         # Notify parent of selection change immediately
         self.on_commits_selected(self.selected_commits)
+
+        # Update UI row checkboxes immediately
+        for sha, cb in self.commit_message_checkboxes.items():
+            try:
+                if select_all:
+                    cb.select()
+                else:
+                    cb.deselect()
+            except Exception:
+                pass
 
         # Do ALL database operations in background thread - don't block GUI at all
         def update_database():
@@ -1087,6 +1122,9 @@ class CommitBrowser(ctk.CTkFrame):
                 
                 self.logger.info("Background thread: Database operations completed for messages")
                 # Don't refresh display - it's too expensive and not necessary
+
+                # Exit busy on UI thread
+                self.after(0, lambda: self._set_busy(False))
                 
             except Exception as e:
                 self.logger.error(f"Error updating database for messages: {e}")
@@ -1097,8 +1135,13 @@ class CommitBrowser(ctk.CTkFrame):
 
     def _toggle_select_all_comments(self):
         """Toggle select all comments for processing."""
+        if self.db_busy:
+            return
         select_all = self.select_all_comments_var.get()
-        
+
+        # Enter busy state
+        self._set_busy(True, "Updating comment selections...")
+
         # Log the click immediately for debugging
         self.logger.info(f"🔴 PROCESS COMMENTS CHECKBOX CLICKED - select_all: {select_all}")
 
@@ -1110,6 +1153,16 @@ class CommitBrowser(ctk.CTkFrame):
 
         # Notify parent of selection change immediately
         self.on_commits_selected(self.selected_commits)
+
+        # Update UI row checkboxes immediately
+        for sha, cb in self.commit_comments_checkboxes.items():
+            try:
+                if select_all:
+                    cb.select()
+                else:
+                    cb.deselect()
+            except Exception:
+                pass
 
         # Do ALL database operations in background thread - don't block GUI at all
         def update_database():
@@ -1134,6 +1187,9 @@ class CommitBrowser(ctk.CTkFrame):
                 
                 self.logger.info("Background thread: Database operations completed for comments")
                 # Don't refresh display - it's too expensive and not necessary
+
+                # Exit busy on UI thread
+                self.after(0, lambda: self._set_busy(False))
                 
             except Exception as e:
                 self.logger.error(f"Error updating database for comments: {e}")
@@ -1158,12 +1214,190 @@ class CommitBrowser(ctk.CTkFrame):
         
         threading.Thread(target=refresh_background, daemon=True).start()
 
+    def _create_row(self, index: int, commit: GitHubCommit, processed_status: Dict[str, bool]):
+        """Create a row with checkboxes at the front and text label after them."""
+        try:
+            # Container frame for row widgets
+            row_frame = ctk.CTkFrame(self.commit_listbox, fg_color="transparent")
+            row_frame.grid(row=index, column=0, sticky="ew", padx=0)
+            row_frame.grid_columnconfigure(2, weight=1)  # Allow text label to stretch
+
+            # Message checkbox (front)
+            def _mk_msg_cb(c=commit):
+                return lambda: self._on_message_row_toggle(c)
+
+            msg_cb = ctk.CTkCheckBox(
+                row_frame,
+                text="M",
+                width=24,
+                command=_mk_msg_cb(commit)
+            )
+            msg_cb.grid(row=0, column=0, padx=(6, 6), pady=2, sticky="w")
+
+            # Comments checkbox (front)
+            def _mk_com_cb(c=commit):
+                return lambda: self._on_comments_row_toggle(c)
+
+            com_cb = ctk.CTkCheckBox(
+                row_frame,
+                text="C",
+                width=24,
+                command=_mk_com_cb(commit)
+            )
+            com_cb.grid(row=0, column=1, padx=(0, 8), pady=2, sticky="w")
+
+            # Text label for commit line
+            display_text = self._format_commit_display_with_status(commit, processed_status)
+            text_label = ctk.CTkLabel(
+                row_frame,
+                text=display_text,
+                anchor="w",
+                justify="left",
+                font=ctk.CTkFont(size=11)
+            )
+            text_label.grid(row=0, column=2, sticky="ew")
+
+            # Bind click on label to show preview
+            def _on_label_click(_event=None, c=commit):
+                self._update_preview(c)
+            text_label.bind("<Button-1>", _on_label_click)
+
+            # Set initial checkbox states
+            if processed_status.get('message'):
+                msg_cb.select()
+            if processed_status.get('comments'):
+                com_cb.select()
+
+            self.commit_message_checkboxes[commit.sha] = msg_cb
+            self.commit_comments_checkboxes[commit.sha] = com_cb
+        except Exception as e:
+            self.logger.error(f"Error creating commit row: {e}")
+
+    def _attach_row_checkboxes(self, processed_commits: Dict[str, Dict[str, bool]]):
+        """Deprecated helper kept for compatibility; now uses _create_row per item."""
+        # Recreate rows using the new layout with checkboxes first
+        self.commit_message_checkboxes.clear()
+        self.commit_comments_checkboxes.clear()
+        for i, commit in enumerate(self.filtered_commits):
+            self._create_row(i, commit, processed_commits.get(commit.sha, {'message': False, 'comments': False}))
+
+    def _on_message_row_toggle(self, commit: GitHubCommit):
+        """Handle per-row message checkbox toggle with non-blocking DB update."""
+        if self.db_busy:
+            # Revert toggle to previous state
+            cb = self.commit_message_checkboxes.get(commit.sha)
+            if cb:
+                cb.toggle()
+            return
+
+        msg_cb = self.commit_message_checkboxes.get(commit.sha)
+        com_cb = self.commit_comments_checkboxes.get(commit.sha)
+        if not msg_cb or not com_cb:
+            return
+
+        message_selected = msg_cb.get()
+        comments_selected = com_cb.get()
+
+        # Busy while updating DB
+        self._set_busy(True, "Updating selection...")
+
+        def update_db():
+            try:
+                if message_selected:
+                    self.database.mark_commit_processed(self.repository, commit.sha, "message")
+                else:
+                    self.database.mark_commit_unprocessed(self.repository, commit.sha, "message")
+
+                # Update selected commits in memory
+                if message_selected or comments_selected:
+                    if commit not in self.selected_commits:
+                        self.selected_commits.append(commit)
+                else:
+                    if commit in self.selected_commits:
+                        self.selected_commits.remove(commit)
+
+                # Notify parent on UI thread
+                self.after(0, lambda: self.on_commits_selected(self.selected_commits))
+            except Exception as e:
+                self.logger.error(f"Error updating message selection: {e}")
+            finally:
+                self.after(0, lambda: self._set_busy(False))
+
+        threading.Thread(target=update_db, daemon=True).start()
+
+    def _on_comments_row_toggle(self, commit: GitHubCommit):
+        """Handle per-row comments checkbox toggle with non-blocking DB update."""
+        if self.db_busy:
+            cb = self.commit_comments_checkboxes.get(commit.sha)
+            if cb:
+                cb.toggle()
+            return
+
+        msg_cb = self.commit_message_checkboxes.get(commit.sha)
+        com_cb = self.commit_comments_checkboxes.get(commit.sha)
+        if not msg_cb or not com_cb:
+            return
+
+        message_selected = msg_cb.get()
+        comments_selected = com_cb.get()
+
+        self._set_busy(True, "Updating selection...")
+
+        def update_db():
+            try:
+                if comments_selected:
+                    self.database.mark_commit_processed(self.repository, commit.sha, "comments")
+                else:
+                    self.database.mark_commit_unprocessed(self.repository, commit.sha, "comments")
+
+                if message_selected or comments_selected:
+                    if commit not in self.selected_commits:
+                        self.selected_commits.append(commit)
+                else:
+                    if commit in self.selected_commits:
+                        self.selected_commits.remove(commit)
+
+                self.after(0, lambda: self.on_commits_selected(self.selected_commits))
+            except Exception as e:
+                self.logger.error(f"Error updating comments selection: {e}")
+            finally:
+                self.after(0, lambda: self._set_busy(False))
+
+        threading.Thread(target=update_db, daemon=True).start()
+
+    def _set_busy(self, busy: bool, text: str = "Working..."):
+        """Toggle busy UI and disable controls during DB operations."""
+        try:
+            self.db_busy = busy
+            if busy:
+                if self.select_all_message_cb:
+                    self.select_all_message_cb.configure(state="disabled")
+                if self.select_all_comments_cb:
+                    self.select_all_comments_cb.configure(state="disabled")
+                if self.refresh_button:
+                    self.refresh_button.configure(state="disabled")
+                self.busy_label.configure(text=text)
+                self.busy_label.grid()
+                self.busy_progress.grid()
+                self.busy_progress.start()
+            else:
+                if self.select_all_message_cb:
+                    self.select_all_message_cb.configure(state="normal")
+                if self.select_all_comments_cb:
+                    self.select_all_comments_cb.configure(state="normal")
+                if self.refresh_button:
+                    self.refresh_button.configure(state="normal")
+                self.busy_progress.stop()
+                self.busy_label.grid_remove()
+                self.busy_progress.grid_remove()
+        except Exception as e:
+            self.logger.error(f"Error toggling busy state: {e}")
+
     def _update_display_status(self, processed_commits: Dict[str, Dict[str, bool]]):
         """Update the display with current processing status."""
         # Clear and repopulate the list with updated status
         self.commit_listbox.delete(0, "end")
-        
+
         for i, commit in enumerate(self.filtered_commits):
-            processed_status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
-            display_text = self._format_commit_display_with_status(commit, processed_status)
-            self.commit_listbox.insert(i, display_text)
+            status = processed_commits.get(commit.sha, {'message': False, 'comments': False})
+            self._create_row(i, commit, status)

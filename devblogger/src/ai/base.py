@@ -106,12 +106,14 @@ class AIProvider(ABC):
         return issues
 
     def get_status(self) -> Dict[str, Any]:
-        """Get provider status information."""
+        """Get provider status information (non-blocking; does not test connectivity)."""
         return {
             "name": self.name,
             "model": self.model,
             "configured": self.is_configured(),
-            "available": self.test_connection(),
+            # Avoid synchronous connectivity checks here to prevent UI stalls.
+            # Use AI Configuration 'Refresh Status' or explicit test buttons instead.
+            "available": None,
             "issues": self.validate_config()
         }
 

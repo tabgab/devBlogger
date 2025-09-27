@@ -254,6 +254,13 @@ class MainWindow(ctk.CTk):
             width=240
         )
         self.global_status_progress.pack(padx=10, pady=(0, 6))
+
+        # Inner container for tab buttons to eliminate excessive spacing
+        self.tab_buttons_inner = ctk.CTkFrame(self.tab_buttons_frame, fg_color="transparent")
+        self.tab_buttons_inner.grid(row=1, column=0, sticky="w", padx=0, pady=(2, 0))
+        # Keep buttons grouped left with minimal spacing
+        for col in range(3):
+            self.tab_buttons_inner.grid_columnconfigure(col, weight=0)
         
         # Create tab content frame - takes up all remaining space
         self.tab_content_frame = ctk.CTkFrame(self.main_container)
@@ -281,32 +288,32 @@ class MainWindow(ctk.CTk):
         
         # GitHub tab button
         github_btn = ctk.CTkButton(
-            self.tab_buttons_frame,
+            self.tab_buttons_inner,
             text="GitHub",
             command=lambda: self._show_tab("GitHub"),
             width=120
         )
-        github_btn.grid(row=1, column=0, padx=(5, 2), pady=5)
+        github_btn.grid(row=0, column=0, padx=(5, 6), pady=5, sticky="w")
         self.tab_buttons["GitHub"] = github_btn
         
         # AI Configuration tab button
         ai_btn = ctk.CTkButton(
-            self.tab_buttons_frame,
+            self.tab_buttons_inner,
             text="AI Configuration",
             command=lambda: self._show_tab("AI Configuration"),
             width=120
         )
-        ai_btn.grid(row=1, column=1, padx=2, pady=5)
+        ai_btn.grid(row=0, column=1, padx=6, pady=5, sticky="w")
         self.tab_buttons["AI Configuration"] = ai_btn
         
         # Blog Generation tab button
         blog_btn = ctk.CTkButton(
-            self.tab_buttons_frame,
+            self.tab_buttons_inner,
             text="Blog Generation",
             command=lambda: self._show_tab("Blog Generation"),
             width=120
         )
-        blog_btn.grid(row=1, column=2, padx=(2, 5), pady=5)
+        blog_btn.grid(row=0, column=2, padx=6, pady=5, sticky="w")
         self.tab_buttons["Blog Generation"] = blog_btn
 
     def _create_tab_contents(self):
@@ -551,7 +558,7 @@ class MainWindow(ctk.CTk):
         self.auth_in_progress = False
 
         # Track post-auth tasks and wire callbacks
-        self._post_auth_pending = {"server": True, "client": True, "stabilize": True}
+        self._post_auth_pending = {"server": True, "client": True, "stabilize": True, "repos": False}
         try:
             # Ensure UI callbacks from auth use the main window's event loop
             self.github_auth.ui_after = self.after
@@ -569,6 +576,14 @@ class MainWindow(ctk.CTk):
         # Stop the authentication server immediately (non-blocking)
         if self.github_auth.callback_server:
             self.github_auth._stop_callback_server()
+        else:
+            # If no server is running, clear 'server' pending so banner can finish
+            try:
+                if hasattr(self, "_post_auth_pending"):
+                    self._post_auth_pending["server"] = False
+                    self._post_auth_check_ready()
+            except Exception:
+                pass
         
         # Set up a callback for when user data becomes available
         self.github_auth.success_callback = self._on_user_data_available
@@ -583,7 +598,7 @@ class MainWindow(ctk.CTk):
                 self.global_status_label.configure(
                     text=(
                         "Finalizing GitHub authentication... Please wait.\n"
-                        "Tasks: stopping local callback server, initializing GitHub client, restoring window focus.\n"
+                        "Tasks: stopping local callback server, initializing GitHub client, restoring window focus, loading repositories.\n"
                         "You can continue when this message disappears."
                     )
                 )
@@ -847,7 +862,7 @@ class MainWindow(ctk.CTk):
     def _post_auth_check_ready(self):
         """Update banner based on remaining post-auth tasks and hide when all complete."""
         try:
-            pending = getattr(self, "_post_auth_pending", {"server": False, "client": False, "stabilize": False})
+            pending = getattr(self, "_post_auth_pending", {"server": False, "client": False, "stabilize": False, "repos": False})
             remaining = [k for k, v in pending.items() if v]
             if hasattr(self, "global_status_frame"):
                 if remaining:
@@ -908,8 +923,9 @@ class MainWindow(ctk.CTk):
         """Refresh list of available repositories - only when user clicks Refresh."""
         self.logger.info("=== REFRESH REPOSITORIES CALLED ===")
         
-        if not self.github_auth.is_authenticated():
-            self.logger.warning("Refresh attempted but not authenticated")
+        access_token = self.github_auth.get_access_token()
+        if not access_token:
+            self.logger.warning("Refresh attempted but no access token yet")
             return
         
         if not self.github_client:
@@ -933,6 +949,14 @@ class MainWindow(ctk.CTk):
             self.repo_dropdown.configure(state="disabled")
             self.repo_dropdown.set("Loading repositories...")
             self.logger.info("Dropdown configured")
+            
+            # Mark repos loading as a post-auth task if applicable
+            try:
+                if hasattr(self, "_post_auth_pending"):
+                    self._post_auth_pending["repos"] = True
+                    self._post_auth_check_ready()
+            except Exception:
+                pass
             
             # Disable refresh button and show cancel option
             self.logger.info("Looking for refresh button...")
@@ -1001,6 +1025,14 @@ class MainWindow(ctk.CTk):
         if refresh_button:
             refresh_button.configure(text="Refresh", command=self._refresh_repositories)
 
+        # Clear post-auth repos pending if it was set
+        try:
+            if hasattr(self, "_post_auth_pending"):
+                self._post_auth_pending["repos"] = False
+                self._post_auth_check_ready()
+        except Exception:
+            pass
+
     def _update_repository_list(self, repo_names: list):
         """Update repository dropdown with new list."""
         # Reset loading state
@@ -1039,6 +1071,14 @@ class MainWindow(ctk.CTk):
         if refresh_button:
             refresh_button.configure(text="Refresh", command=self._refresh_repositories)
         
+        # Clear post-auth repos pending if it was set (error path)
+        try:
+            if hasattr(self, "_post_auth_pending"):
+                self._post_auth_pending["repos"] = False
+                self._post_auth_check_ready()
+        except Exception:
+            pass
+
         # Show error
         CTkMessagebox(
             title="Error",

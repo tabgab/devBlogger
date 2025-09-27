@@ -617,8 +617,29 @@ class GitHubAuth:
                     self.logger.warning(f"Failed to spawn async server shutdown thread: {e}")
                 # Notify UI that server stop was initiated (completion will trigger callback below)
             else:
-                # Already stopped by another caller
+                # Already stopped by another caller - notify UI to clear pending state
                 self.logger.info("Callback server already stopped (noop)")
+                try:
+                    on_stopped = getattr(self, "on_server_stopped", None)
+                    ui_after = getattr(self, "ui_after", None)
+                    if callable(on_stopped):
+                        if callable(ui_after):
+                            ui_after(0, on_stopped)
+                        else:
+                            # Fallback to default root if available
+                            import tkinter as tk
+                            if hasattr(tk, "_default_root") and tk._default_root:
+                                tk._default_root.after(0, on_stopped)
+                            else:
+                                # Last resort, call directly
+                                on_stopped()
+                    # Clear the callback to avoid duplicate invocations
+                    try:
+                        self.on_server_stopped = None  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
         except Exception as e:
             # Ensure attributes remain cleared even if errors happen
